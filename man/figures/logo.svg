@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="518" height="600" viewBox="0 0 518 600">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#16324F"/>
+      <stop offset="1" stop-color="#0E7C86"/>
+    </linearGradient>
+    <clipPath id="hexclip"><polygon points="259,14 500,153 500,447 259,586 18,447 18,153"/></clipPath>
+  </defs>
+  <polygon points="259,14 500,153 500,447 259,586 18,447 18,153" fill="url(#bg)"/>
+  <g clip-path="url(#hexclip)">
+    <circle cx="420" cy="120" r="140" fill="#FFFFFF" opacity="0.05"/>
+    <circle cx="90" cy="470" r="120" fill="#FFFFFF" opacity="0.04"/>
+  </g>
+  <g transform="translate(0,-18)">
+  <!-- routing tree -->
+  <g stroke="#E8F1F2" stroke-width="7" fill="none" stroke-linecap="round">
+    <path d="M259 105 L259 150"/>
+    <path d="M259 190 C 259 215, 170 210, 170 240"/>
+    <path d="M259 190 C 259 215, 348 210, 348 240"/>
+    <path d="M170 272 L170 300"/>
+    <path d="M348 272 C 348 292, 300 292, 300 312"/>
+    <path d="M348 272 C 348 292, 396 292, 396 312" stroke-dasharray="4 13" opacity="0.7"/>
+    <path d="M170 330 L170 352"/>
+    <path d="M300 335 L300 352"/>
+  </g>
+  <!-- start node -->
+  <circle cx="259" cy="92" r="17" fill="#F4A259"/>
+  <!-- decision diamond -->
+  <polygon points="259,148 289,170 259,192 229,170" fill="#F4A259"/>
+  <!-- question nodes -->
+  <rect x="146" y="238" width="48" height="36" rx="9" fill="#E8F1F2"/>
+  <rect x="324" y="238" width="48" height="36" rx="9" fill="#E8F1F2"/>
+  <circle cx="170" cy="316" r="15" fill="#E8F1F2"/>
+  <circle cx="300" cy="322" r="15" fill="#E8F1F2"/>
+  <circle cx="396" cy="322" r="15" fill="none" stroke="#E8F1F2" stroke-width="5" stroke-dasharray="6 6" opacity="0.7"/>
+  <!-- data table -->
+  <g transform="translate(139,352)">
+    <rect x="0" y="0" width="240" height="96" rx="10" fill="#0B2239" opacity="0.55"/>
+    <rect x="0" y="0" width="240" height="22" rx="10" fill="#F4A259"/>
+    <rect x="0" y="12" width="240" height="10" fill="#F4A259"/>
+    <g fill="#E8F1F2">
+      <rect x="12" y="32" width="50" height="11" rx="3"/><rect x="72" y="32" width="70" height="11" rx="3"/><rect x="152" y="32" width="76" height="11" rx="3" opacity="0.55"/>
+      <rect x="12" y="52" width="50" height="11" rx="3"/><rect x="72" y="52" width="70" height="11" rx="3" opacity="0.55"/><rect x="152" y="52" width="76" height="11" rx="3"/>
+      <rect x="12" y="72" width="50" height="11" rx="3"/><rect x="72" y="72" width="70" height="11" rx="3"/><rect x="152" y="72" width="76" height="11" rx="3" opacity="0.55"/>
+    </g>
+  </g>
+  </g>
+  <text x="259" y="478" text-anchor="middle" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-weight="bold" font-size="43" fill="#FFFFFF" letter-spacing="0.5">SuSo<tspan fill="#F4A259">Simulate</tspan></text>
+  <polygon points="259,14 500,153 500,447 259,586 18,447 18,153" fill="none" stroke="#F4A259" stroke-width="22" stroke-linejoin="round"/>
+</svg>

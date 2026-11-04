@@ -1,0 +1,243 @@
+# ---------------------------------------------------------------------------
+# generators.R -- type-specific answer generators.
+# Values respect validation bounds, cascading parents, option filters and
+# linked sources; trigger questions are steered toward the constants used in
+# enabling conditions so that every branch gets exercised.
+# ---------------------------------------------------------------------------
+
+.first_names <- c("Amina", "John", "Grace", "Peter", "Fatuma", "Joseph", "Mary", "David", "Aisha",
+  "Samuel", "Esther", "Moses", "Ruth", "Ibrahim", "Sarah", "Daniel", "Joyce", "Paul", "Halima",
+  "James", "Agnes", "Emmanuel", "Rose", "Musa", "Faith", "Patrick", "Mercy", "Isaac", "Janet", "Ali")
+.last_names <- c("Okello", "Mwangi", "Nakato", "Banda", "Mensah", "Tesfaye", "Phiri", "Otieno",
+  "Asante", "Kamau", "Namubiru", "Chirwa", "Boateng", "Wanjiru", "Mutasa", "Abebe", "Achieng",
+  "Owusu", "Kato", "Moyo")
+.words <- c("field", "market", "water", "school", "road", "harvest", "rain", "seed", "cattle",
+  "village", "season", "price", "store", "clinic", "loan", "family", "work", "land", "river", "town")
+
+gen_name <- function() paste(sample(.first_names, 1), sample(.last_names, 1))
+
+gen_text <- function(node) {
+  if (nzchar(node$mask %||% "")) return(gen_masked(node$mask))
+  nm <- tolower(paste(node$varname, node$text))
+  if (grepl("name|nome|nom\\b|respondent|head", nm)) return(toupper(gen_name()))
+  if (grepl("phone|tel|mobile", nm)) return(paste0("07", paste(sample(0:9, 8, TRUE), collapse = "")))
+  if (grepl("e-?mail", nm)) return(paste0(tolower(sample(.first_names, 1)), sample(10:99, 1), "@example.org"))
+  if (grepl("village|parish|ward|town|locality|community", nm)) return(toupper(paste(sample(.last_names, 1), sample(c("A", "B", "CENTRAL", "EAST", "WEST"), 1))))
+  paste(sample(.words, sample(2:5, 1), TRUE), collapse = " ")
+}
+
+# SuSo masks: '#' digit, '~' letter, '*' any alphanumeric; other chars literal
+gen_masked <- function(mask) {
+  ch <- strsplit(mask, "")[[1]]
+  paste(vapply(ch, function(c) switch(c, "#" = as.character(sample(0:9, 1)),
+    "~" = sample(LETTERS, 1), "*" = sample(c(LETTERS, 0:9), 1), c), ""), collapse = "")
+}
+
+choose_codes <- function(G, node, codes, k = 1L) {
+  k <- min(k, length(codes))
+  if (k <= 0) return(codes[0])
+  w <- rep(1, length(codes))
+  cnt <- G$cov$opt[[node$varname]]
+  if (!is.null(cnt) && stats::runif(1) < G$tune$target_prob) {
+    c0 <- cnt[fmt_num(codes)]; c0[is.na(c0)] <- 0
+    w <- 1 / (1 + c0)^2
+  }
+  codes[sample.int(length(codes), k, prob = w)]
+}
+
+available_options <- function(G, node, rv) {
+  o <- node$options
+  if (!is.null(node$cascade_from) && nzchar(node$cascade_from)) {
+    pv <- tryCatch(ctx_lookup(make_ctx(G, node, rv), node$cascade_from), error = function(e) NA)
+    if (is_na1(pv)) return(o[0, ])
+    o <- o[!is.na(o$parent) & o$parent == as.numeric(pv[[1]]), ]
+  }
+  if (!is.null(node$filterc) && nrow(o)) {
+    keep <- vapply(o$code, function(cd) eval_bool(G, node$filterc, node, rv, extra = list(optioncode = as.integer(cd)), unsup = TRUE), TRUE)
+    o <- o[keep, ]
+  }
+  o
+}
+
+# Candidate roster vectors (or list item codes) for a linked question
+linked_candidates <- function(G, node, rv) {
+  lk <- node$lnk
+  src <- env_get(G$qn$by_name, lk$var)
+  if (!is.null(src) && identical(src$kind, "question") && src$qtype == "list") {
+    v <- state_value(G$st, src, rv[seq_len(length(src$path))])
+    return(lapply(as.numeric(names(v)), function(x) x))
+  }
+  vp <- lk$path; cp <- node$path
+  k <- 0L
+  while (k < min(length(vp), length(cp)) && vp[k + 1] == cp[k + 1]) k <- k + 1L
+  rvs <- expand_rows(G$st, vp, rv, k)
+  if (!isTRUE(lk$roster)) {
+    rvs <- Filter(function(r) answered(state_value(G$st, src, r)), rvs)
+  }
+  if (!is.null(node$lfilterc) && length(rvs)) {
+    pseudo <- list(path = vp, kind = "roster", varname = "", id = node$id)
+    rvs <- Filter(function(r) eval_bool(G, node$lfilterc, pseudo, r, unsup = TRUE), rvs)
+  }
+  rvs
+}
+
+gen_count <- function(G, node, lo = NA, hi = NA, cap = NA) {
+  rs <- G$cfg$roster_sizes[[node$varname]]
+  if (is.function(rs)) return(as.integer(rs()))
+  if (length(rs) == 2) return(as.integer(sample(rs[1]:rs[2], 1)))
+  lo <- if (is.na(lo)) 1 else max(0, ceiling(lo))
+  hi <- min(c(hi, cap, G$cfg$max_roster_default), na.rm = TRUE)
+  if (hi < lo) hi <- lo
+  n <- lo + stats::rpois(1, max(G$cfg$roster_mean - lo, 0.5))
+  as.integer(min(max(n, lo), hi))
+}
+
+gen_numeric <- function(G, node, rv) {
+  lo <- node$bounds[1]; hi <- node$bounds[2]
+  if (G$wide) { lo <- NA; hi <- NA }
+  int <- isTRUE(node$is_integer)
+  if (isTRUE(node$is_trigger)) return(gen_count(G, node, lo, hi))
+  tg <- node$targets
+  if (length(tg) && stats::runif(1) < G$tune$target_prob) {
+    cand <- unique(c(tg - 1, tg, tg + 1))
+    if (!int) cand <- unique(c(cand, tg - 0.5, tg + 0.5))
+    cand <- cand[(is.na(lo) | cand >= lo) & (is.na(hi) | cand <= hi)]
+    if (length(cand)) return(finish_num(sample(cand, 1), node))
+  }
+  nm <- tolower(node$varname)
+  x <- if (!is.na(lo) && !is.na(hi)) {
+    if (int && (hi - lo) < 1e6) lo + sample.int(floor(hi - lo) + 1, 1) - 1
+    else if (hi - lo > 1000 && lo >= 0) min(hi, lo + stats::rlnorm(1, log(max(10, (hi - lo) / 1e4)), 1.2))
+    else stats::runif(1, lo, hi)
+  } else {
+    base <- if (grepl("age", nm)) sample(0:90, 1)
+      else if (grepl("year|yr", nm)) sample(1960:2025, 1)
+      else if (grepl("price|cost|amount|income|value|exp|wage|pay|ugx|kes|usd", nm)) stats::rlnorm(1, log(5000), 1.2)
+      else if (grepl("area|acre|ha$|hect", nm)) stats::rlnorm(1, log(1.5), 0.8)
+      else if (grepl("size|members|num|nb|count|n_|qty|quant", nm)) stats::rpois(1, 3) + 1
+      else stats::rlnorm(1, log(20), 1)
+    if (!is.na(lo)) base <- max(lo, base)
+    if (!is.na(hi)) base <- min(hi, base)
+    base
+  }
+  finish_num(x, node)
+}
+
+finish_num <- function(x, node) {
+  if (isTRUE(node$is_integer)) {
+    x <- round(x)
+    return(if (abs(x) < .Machine$integer.max) as.integer(x) else x)
+  }
+  d <- suppressWarnings(as.integer(node$decimals))
+  round(x, if (is.na(d)) 2 else d)
+}
+
+gen_value <- function(G, node, rv) {
+  user <- G$cfg$generators[[node$varname]]
+  if (is.function(user)) return(coerce_preload(node, user(rv = rv, unit = G$st$unit)))
+  switch(node$qtype,
+    numeric = gen_numeric(G, node, rv),
+    single = {
+      if (node$varname %in% G$tune$focus && length(node$targets) && is.null(node$lnk) && stats::runif(1) < 0.6) {
+        o <- available_options(G, node, rv); tc <- intersect(node$targets, o$code)
+        if (length(tc)) return(if (length(tc) == 1) tc else sample(tc, 1))
+      }
+      if (!is.null(node$lnk)) {
+        cand <- linked_candidates(G, node, rv)
+        if (!length(cand)) return(NULL)
+        return(as.numeric(cand[[sample.int(length(cand), 1)]]))
+      }
+      o <- available_options(G, node, rv)
+      if (!nrow(o)) return(NULL)
+      choose_codes(G, node, o$code, 1L)
+    },
+    multi = {
+      if (!is.null(node$lnk)) {
+        cand <- linked_candidates(G, node, rv)
+        if (!length(cand)) return(NULL)
+        m <- if (is.na(node$max_answers)) length(cand) else min(node$max_answers, length(cand))
+        k <- min(m, 1 + stats::rgeom(1, 0.5))
+        return(lapply(cand[sort(sample.int(length(cand), k))], as.numeric))
+      }
+      o <- available_options(G, node, rv)
+      if (!nrow(o)) return(NULL)
+      if (isTRUE(node$yesno)) {
+        yes <- o$code[stats::runif(nrow(o)) < 0.4]
+        if (!is.na(node$max_answers) && length(yes) > node$max_answers) yes <- sample(yes, node$max_answers)
+        return(sus_yesno(yes, setdiff(o$code, yes), node$options$code))
+      }
+      m <- if (is.na(node$max_answers)) nrow(o) else min(node$max_answers, nrow(o))
+      k <- if (isTRUE(node$is_trigger)) gen_count(G, node, 1, m) else min(m, 1 + stats::rgeom(1, 0.55))
+      pick <- choose_codes(G, node, o$code, k)
+      tc <- intersect(node$targets, o$code)
+      if (node$varname %in% G$tune$focus && length(tc) && stats::runif(1) < 0.6) {
+        t1 <- if (length(tc) == 1) tc else sample(tc, 1)
+        if (!(t1 %in% pick)) pick[length(pick)] <- t1
+      }
+      sus_multi(pick)
+    },
+    text = gen_text(node),
+    barcode = paste(sample(0:9, 13, TRUE), collapse = ""),
+    picture = paste0(substr(new_guid(), 1, 12), ".jpg"),
+    audio = paste0(substr(new_guid(), 1, 12), ".m4a"),
+    area = gen_area(G),
+    date = {
+      if (isTRUE(node$is_timestamp)) return(G$st$now)
+      d0 <- as.Date(G$st$unit$start_time)
+      nm <- tolower(paste(node$varname, node$text))
+      if (grepl("birth|dob|born", nm)) d0 - sample(365:(80 * 365), 1) else d0 - sample(0:540, 1)
+    },
+    gps = {
+      a <- gps_anchor(G)   # GPS answers of one interview cluster around the dwelling (~20 m) ...
+      sd <- if (stats::runif(1) < 0.08) 0.006 else 0.0002   # ... with occasional off-site readings
+      sus_gps(round(a[1] + stats::rnorm(1, 0, sd), 7), round(a[2] + stats::rnorm(1, 0, sd), 7),
+              round(stats::runif(1, 3, 20)), round(stats::runif(1, 50, 1800), 1), G$st$now)
+    },
+    list = {
+      cap <- if (is.na(node$max_answers)) 40 else node$max_answers
+      n <- if (isTRUE(node$is_trigger)) gen_count(G, node, 1, cap) else min(cap, sample(1:4, 1))
+      if (n <= 0) return(NULL)
+      nm <- tolower(paste(node$varname, node$text))
+      tx <- if (grepl("member|name|person|child|people|household", nm)) toupper(replicate(n, gen_name()))
+            else toupper(replicate(n, paste(sample(.words, 2), collapse = " ")))
+      sus_textlist(seq_len(n), tx)
+    },
+    NULL)
+}
+
+gps_anchor <- function(G) {
+  if (is.null(G$st$anchor)) { u <- G$st$unit; G$st$anchor <- c(u$lat + stats::rnorm(1, 0, 0.004), u$lon + stats::rnorm(1, 0, 0.004)) }
+  G$st$anchor
+}
+
+gen_area <- function(G) {
+  a <- gps_anchor(G)
+  lat <- a[1] + stats::rnorm(1, 0, 0.002); lon <- a[2] + stats::rnorm(1, 0, 0.002)
+  d <- stats::runif(4, 0.0003, 0.001)
+  pts <- rbind(c(lon, lat), c(lon + d[1], lat), c(lon + d[2], lat + d[3]), c(lon, lat + d[4]), c(lon, lat))
+  paste0("POLYGON((", paste(sprintf("%.7f %.7f", pts[, 1], pts[, 2]), collapse = ","), "))")
+}
+
+# Generate, then re-draw until hard validations pass (or inject an error)
+gen_valid <- function(G, node, rv) {
+  key <- st_key(node$varname, rv)
+  if (length(node$valc) && stats::runif(1) < G$cfg$error_rate) {
+    G$wide <- TRUE
+    on.exit(G$wide <- FALSE)
+    for (t in 1:15) {
+      val <- gen_value(G, node, rv)
+      if (is.null(val)) break
+      assign(key, val, envir = G$st$vals)
+      if (length(validate(G, node, rv, errors_only = TRUE))) return(val)
+    }
+    G$wide <- FALSE
+  }
+  val <- NULL
+  for (t in seq_len(G$cfg$max_tries)) {
+    val <- gen_value(G, node, rv)
+    if (is.null(val)) return(NULL)
+    assign(key, val, envir = G$st$vals)
+    if (!length(node$valc) || !length(validate(G, node, rv, errors_only = TRUE))) return(val)
+  }
+  val
+}
