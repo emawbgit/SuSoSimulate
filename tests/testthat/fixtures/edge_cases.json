@@ -1,0 +1,91 @@
+{
+  "Id": "e0000000000000000000000000000001",
+  "Title": "Edge cases",
+  "VariableName": "edge",
+  "Macros": { "m1": { "Name": "hasKids", "Content": "n_kids > 0" } },
+  "Categories": [ { "Id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "Name": "missing_cats" } ],
+  "Children": [
+    { "$type": "Group", "PublicKey": "e1000000000000000000000000000000", "Title": "Cover", "IsRoster": false, "Children": [
+      { "$type": "NumericQuestion", "PublicKey": "e1000000000000000000000000000001", "QuestionType": 4, "VariableName": "hhid", "QuestionText": "HH id", "Featured": true, "IsInteger": true },
+      { "$type": "TextQuestion", "PublicKey": "e1000000000000000000000000000002", "QuestionType": 7, "VariableName": "village", "QuestionText": "Village <b>name</b>", "Featured": true },
+      { "$type": "DateTimeQuestion", "PublicKey": "e1000000000000000000000000000003", "QuestionType": 5, "VariableName": "t_start", "QuestionText": "Start", "IsTimestamp": true },
+      { "$type": "DateTimeQuestion", "PublicKey": "e1000000000000000000000000000004", "QuestionType": 5, "VariableName": "dob", "QuestionText": "Date of birth of respondent" },
+      { "$type": "Variable", "PublicKey": "e1000000000000000000000000000005", "Name": "resp_age", "Type": 1, "Expression": "FullYearsBetween(dob, DateTime.Today)" },
+      { "$type": "Variable", "PublicKey": "e1000000000000000000000000000006", "Name": "is_old", "Type": 3, "Expression": "resp_age >= 60" },
+      { "$type": "Variable", "PublicKey": "e1000000000000000000000000000007", "Name": "tag", "Type": 5, "Expression": "village.ToUpper() + \"-\" + hhid.ToString()" },
+      { "$type": "Variable", "PublicKey": "e1000000000000000000000000000008", "Name": "dob_plus", "Type": 4, "Expression": "dob.AddYears(1)" },
+      { "$type": "StaticText", "PublicKey": "e1000000000000000000000000000009", "Text": "Elderly respondent", "ConditionExpression": "is_old" },
+      { "$type": "TextQuestion", "PublicKey": "e100000000000000000000000000000a", "QuestionType": 7, "VariableName": "fwd", "QuestionText": "Forward reference", "ConditionExpression": "later_q == 1" },
+      { "$type": "Group", "PublicKey": "e100000000000000000000000000000b", "Title": "Empty group", "IsRoster": false, "Children": [] },
+      { "$type": "SingleQuestion", "PublicKey": "e100000000000000000000000000000c", "QuestionType": 0, "VariableName": "cat_q", "QuestionText": "Reusable categories that are not shipped", "CategoriesId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "Answers": [] },
+      { "$type": "NumericQuestion", "PublicKey": "e100000000000000000000000000000d", "QuestionType": 4, "VariableName": "income", "QuestionText": "Income", "IsInteger": true,
+        "Answers": [ {"AnswerText": "Don't know", "AnswerValue": "-98"}, {"AnswerText": "Refused", "AnswerValue": "-99"} ],
+        "ValidationConditions": [ {"Expression": "self >= 0 || self == -98 || self == -99", "Message": "bad", "Severity": 0} ] },
+      { "$type": "TextQuestion", "PublicKey": "e100000000000000000000000000000e", "QuestionType": 7, "VariableName": "rich_note", "QuestionText": "Why so rich?", "ConditionExpression": "(income ?? 0) > 1000" },
+      { "$type": "TextQuestion", "PublicKey": "e100000000000000000000000000000f", "QuestionType": 7, "VariableName": "adult_note", "QuestionText": "Adult", "ConditionExpression": "(DateTime.Now - dob).TotalDays > 365 * 18" },
+      { "$type": "TextQuestion", "PublicKey": "e1000000000000000000000000000010", "QuestionType": 7, "VariableName": "vil_a", "QuestionText": "Village has an A", "ConditionExpression": "village.ToLower().Contains(\"a\")" },
+      { "$type": "SingleQuestion", "PublicKey": "e1000000000000000000000000000011", "QuestionType": 0, "VariableName": "circ_a", "QuestionText": "Circular A", "ConditionExpression": "circ_b != 1",
+        "Answers": [ {"AnswerText": "Yes", "AnswerValue": "1"}, {"AnswerText": "No", "AnswerValue": "2"} ] },
+      { "$type": "SingleQuestion", "PublicKey": "e1000000000000000000000000000012", "QuestionType": 0, "VariableName": "circ_b", "QuestionText": "Circular B", "ConditionExpression": "circ_a != 1",
+        "Answers": [ {"AnswerText": "Yes", "AnswerValue": "1"}, {"AnswerText": "No", "AnswerValue": "2"} ] },
+      { "$type": "TextQuestion", "PublicKey": "e1000000000000000000000000000013", "QuestionType": 7, "VariableName": "lookup_q", "QuestionText": "Lookup table", "ConditionExpression": "prices[1].price > 10" },
+      { "$type": "TextQuestion", "PublicKey": "e1000000000000000000000000000014", "QuestionType": 7, "VariableName": "bad_syntax", "QuestionText": "Broken", "ConditionExpression": "income >> 3 &&" },
+      { "$type": "GpsCoordinateQuestion", "PublicKey": "e1000000000000000000000000000015", "QuestionType": 6, "VariableName": "a_very_long_gps_variable_name_x", "QuestionText": "GPS" },
+      { "$type": "QRBarcodeQuestion", "PublicKey": "e1000000000000000000000000000016", "QuestionType": 10, "VariableName": "bar", "QuestionText": "Barcode" },
+      { "$type": "MultimediaQuestion", "PublicKey": "e1000000000000000000000000000017", "QuestionType": 11, "VariableName": "pic", "QuestionText": "Photo" },
+      { "$type": "AudioQuestion", "PublicKey": "e1000000000000000000000000000018", "QuestionType": 13, "VariableName": "aud", "QuestionText": "Audio" },
+      { "$type": "AreaQuestion", "PublicKey": "e1000000000000000000000000000019", "QuestionType": 12, "VariableName": "area", "QuestionText": "Plot area" },
+      { "$type": "MultyOptionsQuestion", "PublicKey": "e100000000000000000000000000001a", "QuestionType": 3, "VariableName": "reasons", "QuestionText": "Reasons (ranked)", "AreAnswersOrdered": true, "MaxAllowedAnswers": 2,
+        "Answers": [ {"AnswerText": "A", "AnswerValue": "1"}, {"AnswerText": "B", "AnswerValue": "2"}, {"AnswerText": "C", "AnswerValue": "3"}, {"AnswerText": "Other", "AnswerValue": "-77"} ] }
+    ] },
+    { "$type": "Group", "PublicKey": "e2000000000000000000000000000000", "Title": "Rosters", "IsRoster": false, "Children": [
+      { "$type": "NumericQuestion", "PublicKey": "e2000000000000000000000000000001", "QuestionType": 4, "VariableName": "n_kids", "QuestionText": "Number of children", "IsInteger": true },
+      { "$type": "Group", "PublicKey": "e2000000000000000000000000000002", "Title": "Kids", "VariableName": "kids", "IsRoster": true, "RosterSizeSource": 0,
+        "RosterSizeQuestionId": "e2000000000000000000000000000001", "Children": [
+        { "$type": "TextQuestion", "PublicKey": "e2100000000000000000000000000001", "QuestionType": 7, "VariableName": "kid_name", "QuestionText": "Name" },
+        { "$type": "NumericQuestion", "PublicKey": "e2100000000000000000000000000002", "QuestionType": 4, "VariableName": "kid_age", "QuestionText": "Age", "IsInteger": true,
+          "ValidationConditions": [ {"Expression": "self.InRange(0, 17)", "Message": "0-17", "Severity": 0} ] },
+        { "$type": "SingleQuestion", "PublicKey": "e2100000000000000000000000000003", "QuestionType": 0, "VariableName": "kid_school", "QuestionText": "In school", "ConditionExpression": "kid_age >= 6",
+          "Answers": [ {"AnswerText": "Yes", "AnswerValue": "1"}, {"AnswerText": "No", "AnswerValue": "2"} ] },
+        { "$type": "MultyOptionsQuestion", "PublicKey": "e2100000000000000000000000000004", "QuestionType": 3, "VariableName": "symptoms", "QuestionText": "Symptoms", "YesNoView": true,
+          "Answers": [ {"AnswerText": "Fever", "AnswerValue": "1"}, {"AnswerText": "Cough", "AnswerValue": "2"}, {"AnswerText": "Diarrhoea", "AnswerValue": "3"} ] },
+        { "$type": "Group", "PublicKey": "e2100000000000000000000000000005", "Title": "Symptom", "VariableName": "symptom_r", "IsRoster": true, "RosterSizeSource": 0,
+          "RosterSizeQuestionId": "e2100000000000000000000000000004", "Children": [
+          { "$type": "NumericQuestion", "PublicKey": "e2200000000000000000000000000001", "QuestionType": 4, "VariableName": "days_sick", "QuestionText": "Days", "IsInteger": true,
+            "ValidationConditions": [ {"Expression": "self.InRange(1, 30)", "Message": "1-30", "Severity": 1} ] },
+          { "$type": "Group", "PublicKey": "e2200000000000000000000000000002", "Title": "Treatment", "VariableName": "treat_r", "IsRoster": true, "RosterSizeSource": 1,
+            "FixedRosterTitles": [ {"Value": 1, "Title": "Clinic"}, {"Value": 2, "Title": "Pharmacy"} ],
+            "ConditionExpression": "@rowcode == 1 || days_sick > 3", "Children": [
+            { "$type": "SingleQuestion", "PublicKey": "e2300000000000000000000000000001", "QuestionType": 0, "VariableName": "treated", "QuestionText": "Treated", "ConditionExpression": "symptoms.Yes.Length > 1 || @rowcode == 1",
+              "Answers": [ {"AnswerText": "Yes", "AnswerValue": "1"}, {"AnswerText": "No", "AnswerValue": "2"} ] }
+          ] }
+        ] }
+      ] },
+      { "$type": "Variable", "PublicKey": "e2000000000000000000000000000003", "Name": "kid_max", "Type": 2, "Expression": "kids.Max(x => x.kid_age)" },
+      { "$type": "Variable", "PublicKey": "e2000000000000000000000000000004", "Name": "n_sick", "Type": 1, "Expression": "kids.SelectMany(k => k.symptom_r).Count()" },
+      { "$type": "SingleQuestion", "PublicKey": "e2000000000000000000000000000005", "QuestionType": 0, "VariableName": "oldest", "QuestionText": "Oldest child", "ConditionExpression": "$hasKids",
+        "LinkedToRosterId": "e2000000000000000000000000000002" },
+      { "$type": "TextQuestion", "PublicKey": "e2000000000000000000000000000006", "QuestionType": 7, "VariableName": "teen_note", "QuestionText": "Teen", "ConditionExpression": "kid_age.Any(a => a >= 13)" },
+      { "$type": "TextListQuestion", "PublicKey": "e2000000000000000000000000000007", "QuestionType": 9, "VariableName": "plots", "QuestionText": "Plots", "MaxAnswerCount": 5 },
+      { "$type": "Group", "PublicKey": "e2000000000000000000000000000008", "Title": "Plot", "VariableName": "plot_r", "IsRoster": true, "RosterSizeSource": 0,
+        "RosterSizeQuestionId": "e2000000000000000000000000000007", "Children": [
+        { "$type": "NumericQuestion", "PublicKey": "e2400000000000000000000000000001", "QuestionType": 4, "VariableName": "plot_size", "QuestionText": "Size", "CountOfDecimalPlaces": 2,
+          "ValidationConditions": [ {"Expression": "self > 0", "Message": ">0", "Severity": 0} ] },
+        { "$type": "SingleQuestion", "PublicKey": "e2400000000000000000000000000002", "QuestionType": 0, "VariableName": "plot_crop", "QuestionText": "Crop",
+          "Properties": { "OptionsFilterExpression": "@optioncode != 3 || plot_size > 1" },
+          "Answers": [ {"AnswerText": "Maize", "AnswerValue": "1"}, {"AnswerText": "Beans", "AnswerValue": "2"}, {"AnswerText": "Rice", "AnswerValue": "3"} ] },
+        { "$type": "MultyOptionsQuestion", "PublicKey": "e2400000000000000000000000000003", "QuestionType": 3, "VariableName": "plot_workers", "QuestionText": "Who works it", "MaxAllowedAnswers": 2,
+          "LinkedToQuestionId": "e2100000000000000000000000000001" }
+      ] },
+      { "$type": "Group", "PublicKey": "e2000000000000000000000000000009", "Title": "Shares trigger with plot_r", "VariableName": "plot_r2", "IsRoster": true, "RosterSizeSource": 0,
+        "RosterSizeQuestionId": "e2000000000000000000000000000007", "ConditionExpression": "plot_size > 0.5", "Children": [
+        { "$type": "SingleQuestion", "PublicKey": "e2500000000000000000000000000001", "QuestionType": 0, "VariableName": "irrigated", "QuestionText": "Irrigated",
+          "Answers": [ {"AnswerText": "Yes", "AnswerValue": "1"}, {"AnswerText": "No", "AnswerValue": "2"} ] }
+      ] }
+    ] },
+    { "$type": "Group", "PublicKey": "e3000000000000000000000000000000", "Title": "Later", "IsRoster": false, "Children": [
+      { "$type": "SingleQuestion", "PublicKey": "e3000000000000000000000000000001", "QuestionType": 0, "VariableName": "later_q", "QuestionText": "Later",
+        "Answers": [ {"AnswerText": "Yes", "AnswerValue": "1"}, {"AnswerText": "No", "AnswerValue": "2"} ] }
+    ] }
+  ]
+}

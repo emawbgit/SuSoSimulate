@@ -48,7 +48,7 @@ repair_coverage <- function(qn, cfg, frame, states, cov, verbose = TRUE) {
     keys <- lapply(states, function(st) ls(st$hits))
     repl <- which(vapply(keys, function(k) all(vapply(k, function(x) env_get(cov$counts, x) >= 2, TRUE)), TRUE))
     if (length(repl)) {
-      i <- if (length(repl) == 1) repl else sample(repl, 1)
+      i <- pick(repl)
       unit <- states[[i]]$unit
     } else if (isTRUE(cfg$allow_augment)) {
       i <- length(states) + 1L

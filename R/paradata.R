@@ -47,7 +47,7 @@ para_value <- function(node, v) {
 alt_value <- function(node, v) {
   if (node$kind != "question") return(NULL)
   if (node$qtype == "numeric" && is.numeric(v)) return(v + sample(c(-1, 1, 10), 1))
-  if (node$qtype == "single" && is.null(node$lnk) && nrow(node$options) > 1) return(sample(setdiff(node$options$code, v), 1))
+  if (node$qtype == "single" && is.null(node$lnk) && nrow(node$options) > 1) return(pick(setdiff(node$options$code, v)))
   NULL
 }
 

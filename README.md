@@ -17,20 +17,21 @@ With it you can:
 1. [Features](#features)
 2. [Installation](#installation)
 3. [Testing the package locally](#testing-the-package-locally)
-4. [Quick start](#quick-start)
-5. [Inputs](#inputs)
-6. [Configuration reference](#configuration-reference)
-7. [Output](#output)
-8. [How it works](#how-it-works)
-9. [Supported C# expression syntax](#supported-c-expression-syntax)
-10. [Export conventions](#export-conventions)
-11. [Paradata and system files](#paradata-and-system-files)
-12. [Working with the output in Stata](#working-with-the-output-in-stata)
-13. [Validation against a real export](#validation-against-a-real-export)
-14. [Limitations](#limitations)
-15. [Troubleshooting](#troubleshooting)
-16. [Package structure](#package-structure)
-17. [License](#license)
+4. [Shiny app](#shiny-app)
+5. [Quick start](#quick-start)
+6. [Inputs](#inputs)
+7. [Configuration reference](#configuration-reference)
+8. [Output](#output)
+9. [How it works](#how-it-works)
+10. [Supported C# expression syntax](#supported-c-expression-syntax)
+11. [Export conventions](#export-conventions)
+12. [Paradata and system files](#paradata-and-system-files)
+13. [Working with the output in Stata](#working-with-the-output-in-stata)
+14. [Validation against a real export](#validation-against-a-real-export)
+15. [Limitations](#limitations)
+16. [Troubleshooting](#troubleshooting)
+17. [Package structure](#package-structure)
+18. [License](#license)
 
 ---
 
@@ -45,7 +46,7 @@ With it you can:
 | **Coverage** | Generators deliberately steer toward branch constants; a repair loop swaps redundant interviews for ones that hit missing branch outcomes; a report flags anything uncovered or provably unreachable |
 | **Sampling** | Strata → PSUs → secondary units, preload of identifying questions, interviewer/supervisor teams, fieldwork calendar, PSU GPS centroids, or a user-supplied frame |
 | **Output** | Stata 14 `.dta` files with SuSo naming, ordering, labels and missing-value codes; `paradata.tab`; `interview__actions`, `__diagnostics`, `__errors`, `__comments`, `assignment__actions`; coverage reports; a JSON record of all settings |
-| **Interfaces** | Interactive console wizard and a scriptable API |
+| **Interfaces** | Shiny app (point-and-click, iehfc-style workflow), interactive console wizard, and a scriptable API |
 
 ---
 
@@ -55,15 +56,17 @@ With it you can:
 
 - **R ≥ 4.1** on Windows, macOS or Linux. The package is pure R, so no compiler or Rtools is needed.
 - **Required packages:** `jsonlite`, `haven`.
+- **Required packages:** `zip` is also required (installed automatically).
 - **Optional packages:**
   - `readxl` — reusable categories stored as `.xlsx` (standard in Designer/HQ archives).
   - `pdftools` — PDF input.
+  - `shiny` (≥ 1.7), `bslib` (≥ 0.6), `DT` — the Shiny app.
   - `testthat` — running the test suite.
 
 ### Option A — install from GitHub (recommended)
 
 ```r
-install.packages(c("remotes", "jsonlite", "haven", "readxl", "pdftools", "testthat"))
+install.packages(c("remotes", "readxl", "pdftools", "shiny", "bslib", "DT", "testthat"))
 remotes::install_github("emawbgit/SuSoSimulate")
 ```
 
@@ -78,14 +81,14 @@ R CMD INSTALL .
 Or, from inside R with the working directory set to the clone:
 
 ```r
-install.packages(c("jsonlite", "haven", "readxl", "pdftools", "testthat"))
+install.packages(c("jsonlite", "haven", "zip", "readxl", "pdftools", "shiny", "bslib", "DT", "testthat"))
 install.packages(".", repos = NULL, type = "source")
 ```
 
 ### Option C — install from a source tarball
 
 ```r
-install.packages("SuSoSimulate_0.1.0.tar.gz", repos = NULL, type = "source")
+install.packages("SuSoSimulate_0.2.0.tar.gz", repos = NULL, type = "source")
 ```
 
 ### Check the installation
@@ -120,21 +123,31 @@ Or from the command line, inside the clone:
 Rscript -e 'testthat::test_local()'
 ```
 
-Expected result: `[ FAIL 0 | WARN 0 | SKIP 0 | PASS 46 ]`. The tests cover:
+Expected result: `[ FAIL 0 | WARN 0 | SKIP 0 | PASS 111 ]`. The suite has six files:
 
-- C# null semantics, integer division and modulo.
-- `InRange`, `InList`, ternaries and macros.
-- Roster LINQ (`Count`, `Where`, `Any`), multi-select `Contains` and `Length`.
-- Parsing of comments, generics, casts and `??`.
-- End-to-end generation: file set, id columns, system variables, routing invariants and 100% branch coverage on the demo.
-- Reproducibility from a seed.
-- A scripted run of the interactive wizard.
+| File | What it checks |
+|---|---|
+| `test-expressions.R` | C# null semantics, integer division and modulo; `InRange`, `InList`, ternaries, macros; roster LINQ; multi-select `Contains`/`Length`; parsing of comments, generics, casts and `??` |
+| `test-generation.R` | End to end on the demo: file set, id columns, system variables, routing invariants, 100% branch coverage, seed reproducibility, a scripted run of the console wizard |
+| `test-edge-cases.R` | A hostile fixture questionnaire (`tests/testthat/fixtures/edge_cases.json`), checked for referential integrity and routing semantics across all files (see below) |
+| `test-validation.R` | Clear errors for invalid arguments and malformed files; safe helpers; factor columns in frames; paradata encoding (UTF-8 BOM, CRLF); zip output |
+| `test-app.R` | The Shiny server workflow (load → generate → download zip / settings → re-upload settings → bad file), and a run of the R script the app writes |
+| `helper-integrity.R` | Shared checker: unique keys, every roster row has a parent row, no orphan interviews, sequential paradata order, parseable timestamps |
+
+The edge-case fixture covers:
+
+- DateTime arithmetic and `DateTime.Today`.
+- `??`, string methods, a SelectMany variable.
+- A yes/no-triggered roster, a fixed roster with per-row conditions, three nesting levels.
+- Rosters sharing a trigger, an option filter, a linked multi-select pointing into another roster.
+- Circular conditions, a lookup table, broken syntax.
+- Missing reusable categories, numeric special values, over-long variable names, and every media question type.
 
 ### 2. Run the full package check
 
 ```bash
 R CMD build .
-R CMD check --no-manual SuSoSimulate_0.1.0.tar.gz
+R CMD check --no-manual SuSoSimulate_0.2.0.tar.gz
 ```
 
 Expected: `Status: OK`.
@@ -174,7 +187,13 @@ stopifnot(
 )
 ```
 
-### 5. Try the interactive wizard
+### 5. Try the Shiny app and the console wizard
+
+```r
+suso_app()   # opens in the browser; click "Use the demo questionnaire", then "Generate"
+```
+
+Or the console wizard:
 
 ```r
 suso_mock_interactive()
@@ -196,6 +215,34 @@ res <- suso_mock("MYSURVEY_1_STATA_All.zip",
                  design = suso_design(n_psu = 10, ssu_per_psu = 10), seed = 1)
 res$coverage$branches[res$coverage$branches$status != "covered", ]
 ```
+
+---
+
+## Shiny app
+
+```r
+library(SuSoSimulate)
+suso_app()
+```
+
+The app follows the workflow of DIME's [iehfc](https://github.com/dime-worldbank/iehfc) dashboard: upload, configure, review, export. Everything it does goes through the same functions as the scripted API, so results are identical for the same settings and seed.
+
+| Tab | What you do there |
+|---|---|
+| **1. Questionnaire** | Upload `document.json`, a Designer zip or any HQ export zip (or a PDF, experimentally), or use the demo. You see the number of questions, roster levels, conditions and untranslatable expressions, the export files the questionnaire will produce, every question with its condition, and parser messages. |
+| **2. Sample design** | PSUs, interviews per PSU, and the identifying questions that receive the stratum, PSU and household ids. These are pre-guessed from the cover page. Also set field teams, the calendar, the UTC offset and the GPS bounding box. Optionally upload a preload frame (CSV). |
+| **3. Settings** | A min–max slider for each numeric or list roster trigger, bounded by its validation. Also item non-response, validation-error injection, special values, branch-steering strength, coverage repair and budget, final status shares, and the seed. |
+| **4. Generate & review** | One click generates the data, with a progress bar. Value boxes show interviews, branch coverage, option coverage and paradata events. Tabs hold the coverage report (uncovered branches first, with unreachable notes), option coverage, a browser for every export file, the paradata, and the system files. |
+| **5. Export** | Download the full output as a zip: `<qvar>_STATA_All`, `<qvar>_Paradata_All`, coverage reports, sample frame and settings, plus `reproduce_mock.R` and `load_mock.do`. You can also save the settings as JSON and load them back later (or share them with the team), and download the template code: an R script that reproduces the run, and a Stata do-file that loads every file and merges each roster onto its parent. |
+
+<p align="center">
+<img src="man/figures/app-1_questionnaire.png" width="49%" alt="Questionnaire tab"/>
+<img src="man/figures/app-2_design.png" width="49%" alt="Sample design tab"/>
+<img src="man/figures/app-4_results.png" width="49%" alt="Generate and review tab"/>
+<img src="man/figures/app-5_export.png" width="49%" alt="Export tab"/>
+</p>
+
+**Deploying for a team:** `inst/app/app.R` calls `SuSoSimulate::suso_app_object()`. You can deploy it to Posit Connect or shinyapps.io with the package installed.
 
 ---
 
@@ -531,6 +578,9 @@ The test also translated every one of the questionnaire's 237 enabling condition
 | `Truncating long Stata names` | A generated column name (e.g. `var__Timestamp`) exceeds 32 characters; shorten the variable name in Designer |
 | Text looks garbled in Stata | Use Stata 14 or later (the files are written as version 14, UTF-8) |
 | `markitdown CLI not available` | `pip install "markitdown[pdf]"`, or use `pdf_engine = "pdftools"` |
+| `The app needs: shiny, bslib, DT` | `install.packages(c("shiny", "bslib", "DT"))` |
+| App: "Generation failed: …" notification | The message is the same error `suso_mock()` would raise, for example an invalid setting. Fix the setting and click Generate again |
+| Console shows `$(...).datepicker is not a function` | Harmless. Shiny disables bootstrap-datepicker's auto-init on purpose, and date inputs work normally |
 
 ---
 
@@ -550,8 +600,10 @@ R/
   paradata.R            paradata and system files
   suso_mock.R           main entry point and writer
   interactive.R         console wizard
+  app.R                 Shiny app: suso_app(), UI, server, R/Stata template code
+inst/app/               app.R deployment entry point + www/logo.png
 inst/extdata/demo_household.json   demo questionnaire
-tests/testthat/                    test suite
+tests/testthat/                    test suite (+ fixtures/edge_cases.json)
 ```
 
 ---

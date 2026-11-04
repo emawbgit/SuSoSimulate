@@ -27,6 +27,7 @@ suso_mock_config(
   na_numeric = NA_real_,
   na_string = "##N/A##",
   null_share = 0.25,
+  special_value_rate = 0.03,
   pause_rate = 0.3,
   correction_rate = 0.04,
   comment_rate = 0.004
@@ -45,7 +46,7 @@ least-used options (drives routing coverage).}
 
 \item{max_roster_default}{Cap for roster sizes when no validation bound exists.}
 
-\item{roster_sizes}{Named list: trigger variable -> `c(min, max)` or function().}
+\item{roster_sizes}{Named list: trigger variable -> `c(min, max)`, a fixed size, or function().}
 
 \item{generators}{Named list: variable -> `function(rv, unit)` returning a value.}
 
@@ -81,6 +82,9 @@ least-used options (drives routing coverage).}
 
 \item{null_share}{Scales how often questions tested with `== null` / `IsAnswered()`
 are left unanswered (times `target_prob`), so null branches get covered.}
+
+\item{special_value_rate}{Share of numeric answers drawn from the question's special
+values (e.g. -98 "Don't know"), when it has any (still subject to validations).}
 
 \item{pause_rate, correction_rate, comment_rate}{Paradata realism knobs.}
 }

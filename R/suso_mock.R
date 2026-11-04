@@ -12,13 +12,21 @@
 #' @param seed Random seed for reproducibility.
 #' @param zip Also write `<questionnaire>_STATA_All.zip` and `<questionnaire>_Paradata_All.zip`.
 #' @param verbose Print progress.
+#' @param progress Optional callback `function(value, detail)` (value in 0..1), used by the Shiny app.
 #' @return Object of class `suso_mock`: `$data` (named list of data frames, one
 #'   per export file), `$system`, `$paradata`, `$coverage`, `$frame`.
 #' @export
 suso_mock <- function(questionnaire, design = suso_design(), config = suso_mock_config(),
-                      out_dir = "mock_export", seed = NULL, zip = FALSE, verbose = TRUE) {
+                      out_dir = "mock_export", seed = NULL, zip = FALSE, verbose = TRUE, progress = NULL) {
   check_dependencies()
-  if (!is.null(seed)) set.seed(seed)
+  if (!inherits(design, "suso_design")) stop("`design` must be created with suso_design().", call. = FALSE)
+  if (!inherits(config, "suso_mock_config")) stop("`config` must be created with suso_mock_config().", call. = FALSE)
+  validate_config(config)
+  if (!is.null(seed)) {
+    if (!is.numeric(seed) || length(seed) != 1 || is.na(seed)) stop("`seed` must be a single number.", call. = FALSE)
+    set.seed(seed)
+  }
+  progress <- if (is.function(progress)) progress else function(...) invisible(NULL)
   qn <- if (inherits(questionnaire, "suso_questionnaire")) questionnaire else suso_read_questionnaire(questionnaire, verbose = verbose)
   frame <- build_frame(design, qn)
   n <- nrow(frame$meta)
@@ -30,10 +38,14 @@ suso_mock <- function(questionnaire, design = suso_design(), config = suso_mock_
   for (i in seq_len(n)) {
     states[[i]] <- generate_interview(qn, config, frame_unit(frame, i), cov)
     cov_commit(cov, states[[i]])
+    progress(0.7 * i / n, sprintf("Interview %d of %d", i, n))
     if (verbose && (i %% step == 0 || i == n))
       message(sprintf("  %d/%d  (%.1fs)", i, n, as.numeric(difftime(Sys.time(), t0, units = "secs"))))
   }
-  if (isTRUE(config$coverage_repair)) states <- repair_coverage(qn, config, frame, states, cov, verbose)
+  if (isTRUE(config$coverage_repair)) {
+    progress(0.72, "Repairing branch coverage")
+    states <- repair_coverage(qn, config, frame, states, cov, verbose)
+  }
   n <- length(states)
   nonconv <- sum(!vapply(states, `[[`, TRUE, "converged"))
   if (nonconv) sm_msg(verbose, sprintf("  ! %d interviews did not reach a stable state in %d passes (circular conditions?)", nonconv, config$max_passes))
@@ -50,8 +62,10 @@ suso_mock <- function(questionnaire, design = suso_design(), config = suso_mock_
     }, 0),
     stringsAsFactors = FALSE)
 
+  progress(0.85, "Building export tables")
   sm_msg(verbose, "Building export tables...")
   tables <- build_tables(qn, states, meta, config, verbose)
+  progress(0.93, "Building paradata and system files")
   sm_msg(verbose, "Building paradata and system files...")
   para <- build_paradata(qn, states, meta, config, design)
   sysf <- build_system_files(qn, states, meta, para, config)
@@ -63,6 +77,7 @@ suso_mock <- function(questionnaire, design = suso_design(), config = suso_mock_
                         questionnaire = qn, config = config, design = design, out_dir = out_dir),
                    class = "suso_mock")
   if (!is.null(out_dir)) write_suso_mock(res, out_dir, zip = zip, verbose = verbose)
+  progress(1, "Done")
   res
 }
 
@@ -89,10 +104,7 @@ write_suso_mock <- function(x, out_dir, zip = FALSE, verbose = TRUE) {
   }
   writeLines(rd, file.path(dd, "export__readme.txt"))
   # paradata.tab: UTF-8 with BOM, tab-separated, as exported by HQ
-  con <- file(file.path(pd, "paradata.tab"), open = "wb")
-  writeBin(as.raw(c(0xEF, 0xBB, 0xBF)), con)
-  utils::write.table(x$paradata, con, sep = "\t", quote = FALSE, row.names = FALSE, na = "", fileEncoding = "UTF-8")
-  close(con)
+  write_paradata_tab(x$paradata, file.path(pd, "paradata.tab"))
   writeLines(c('insheet using "paradata.tab", tab case names',
     'label variable interview__id `"Unique 32-character long identifier of the interview"\'',
     'label variable order `"Sequential event number within each interview"\'',
@@ -112,15 +124,7 @@ write_suso_mock <- function(x, out_dir, zip = FALSE, verbose = TRUE) {
   des$start_date <- as.character(des$start_date)
   jsonlite::write_json(list(questionnaire = qn$title, config = cfg, design = des), file.path(out_dir, "mock_config.json"),
                        auto_unbox = TRUE, pretty = TRUE, null = "null", na = "null")
-  if (zip) {
-    for (d in c(dd, pd)) {
-      z <- normalizePath(paste0(d, ".zip"), mustWork = FALSE)
-      old <- setwd(d); on.exit(setwd(old), add = TRUE)
-      if (file.exists(z)) file.remove(z)
-      utils::zip(z, list.files("."), flags = "-q")
-      setwd(old)
-    }
-  }
+  if (zip) for (d in c(dd, pd)) zip_dir(d, paste0(d, ".zip"))
   sm_msg(verbose, sprintf("Written to %s  (%d data files, %d system files, %d paradata events)",
                           normalizePath(out_dir), length(x$data), length(x$system), nrow(x$paradata)))
   invisible(out_dir)
@@ -148,3 +152,22 @@ print.suso_mock <- function(x, ...) {
 #' @param x Result of [suso_mock()].
 #' @export
 suso_coverage_report <- function(x) x$coverage
+
+# paradata.tab exactly as HQ writes it: UTF-8 with BOM, tab-separated, CRLF line ends
+write_paradata_tab <- function(p, path) {
+  cols <- lapply(p, function(x) { x <- as.character(x); x[is.na(x)] <- ""; gsub("[\t\r\n]", " ", enc2utf8(x)) })
+  lines <- c(paste(names(p), collapse = "\t"), do.call(paste, c(cols, sep = "\t")))
+  con <- file(path, open = "wb")
+  on.exit(close(con))
+  writeBin(as.raw(c(0xEF, 0xBB, 0xBF)), con)
+  writeBin(charToRaw(enc2utf8(paste0(paste(lines, collapse = "\r\n"), "\r\n"))), con)
+  invisible(path)
+}
+
+# Cross-platform zip (no external zip binary needed)
+zip_dir <- function(dir, zipfile) {
+  zipfile <- normalizePath(zipfile, mustWork = FALSE)
+  if (file.exists(zipfile)) file.remove(zipfile)
+  zip::zipr(zipfile, list.files(dir, full.names = TRUE, all.files = FALSE, no.. = TRUE))
+  invisible(zipfile)
+}

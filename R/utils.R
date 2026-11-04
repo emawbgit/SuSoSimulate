@@ -4,6 +4,9 @@
 
 `%||%` <- function(a, b) if (is.null(a) || length(a) == 0) b else a
 
+# Safe sampling: sample(x, 1) on a length-1 numeric x draws from 1:x -- never use it on data
+pick <- function(x, k = 1L, ...) if (!length(x)) x else x[sample.int(length(x), min(k, length(x)), ...)]
+
 # TRUE for NULL / zero-length / scalar NA (C# null)
 is_na1 <- function(x) {
   is.null(x) || length(x) == 0 || (is.atomic(x) && length(x) == 1 && is.na(x))
@@ -67,7 +70,7 @@ log_add <- function(lg, item) {
 log_items <- function(lg) if (lg$n == 0) list() else lg$x[seq_len(lg$n)]
 
 check_dependencies <- function(pdf = FALSE, xlsx = FALSE) {
-  req <- c("jsonlite", "haven")
+  req <- c("jsonlite", "haven", "zip")
   if (pdf) req <- c(req, "pdftools")
   if (xlsx) req <- c(req, "readxl")
   miss <- req[!vapply(req, requireNamespace, logical(1), quietly = TRUE)]

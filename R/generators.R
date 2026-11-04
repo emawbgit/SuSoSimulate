@@ -84,7 +84,8 @@ linked_candidates <- function(G, node, rv) {
 gen_count <- function(G, node, lo = NA, hi = NA, cap = NA) {
   rs <- G$cfg$roster_sizes[[node$varname]]
   if (is.function(rs)) return(as.integer(rs()))
-  if (length(rs) == 2) return(as.integer(sample(rs[1]:rs[2], 1)))
+  if (length(rs) == 2) return(as.integer(pick(seq(rs[1], rs[2]))))
+  if (length(rs) == 1 && is.numeric(rs)) return(as.integer(rs))
   lo <- if (is.na(lo)) 1 else max(0, ceiling(lo))
   hi <- min(c(hi, cap, G$cfg$max_roster_default), na.rm = TRUE)
   if (hi < lo) hi <- lo
@@ -96,13 +97,26 @@ gen_numeric <- function(G, node, rv) {
   lo <- node$bounds[1]; hi <- node$bounds[2]
   if (G$wide) { lo <- NA; hi <- NA }
   int <- isTRUE(node$is_integer)
-  if (isTRUE(node$is_trigger)) return(gen_count(G, node, lo, hi))
+  if (isTRUE(node$is_trigger)) {
+    # roster triggers: honour branch constants (e.g. `n > 0` needs some zeros), else realistic counts
+    if (!is.null(G$cfg$roster_sizes[[node$varname]])) return(gen_count(G, node, lo, hi))  # user setting wins
+    tg <- node$targets
+    if (length(tg) && stats::runif(1) < G$tune$target_prob / 2) {
+      cand <- unique(round(c(tg - 1, tg, tg + 1)))
+      cand <- cand[cand >= 0 & (is.na(lo) | cand >= lo) & (is.na(hi) | cand <= hi) &
+                   cand <= G$cfg$max_roster_default]
+      if (length(cand)) return(as.integer(pick(cand)))
+    }
+    return(gen_count(G, node, lo, hi))
+  }
+  # numeric special values (e.g. -98 "Don't know")
+  if (nrow(node$options) && stats::runif(1) < G$cfg$special_value_rate) return(finish_num(pick(node$options$code), node))
   tg <- node$targets
   if (length(tg) && stats::runif(1) < G$tune$target_prob) {
     cand <- unique(c(tg - 1, tg, tg + 1))
     if (!int) cand <- unique(c(cand, tg - 0.5, tg + 0.5))
     cand <- cand[(is.na(lo) | cand >= lo) & (is.na(hi) | cand <= hi)]
-    if (length(cand)) return(finish_num(sample(cand, 1), node))
+    if (length(cand)) return(finish_num(pick(cand), node))
   }
   nm <- tolower(node$varname)
   x <- if (!is.na(lo) && !is.na(hi)) {
@@ -140,7 +154,7 @@ gen_value <- function(G, node, rv) {
     single = {
       if (node$varname %in% G$tune$focus && length(node$targets) && is.null(node$lnk) && stats::runif(1) < 0.6) {
         o <- available_options(G, node, rv); tc <- intersect(node$targets, o$code)
-        if (length(tc)) return(if (length(tc) == 1) tc else sample(tc, 1))
+        if (length(tc)) return(pick(tc))
       }
       if (!is.null(node$lnk)) {
         cand <- linked_candidates(G, node, rv)
@@ -163,7 +177,7 @@ gen_value <- function(G, node, rv) {
       if (!nrow(o)) return(NULL)
       if (isTRUE(node$yesno)) {
         yes <- o$code[stats::runif(nrow(o)) < 0.4]
-        if (!is.na(node$max_answers) && length(yes) > node$max_answers) yes <- sample(yes, node$max_answers)
+        if (!is.na(node$max_answers) && length(yes) > node$max_answers) yes <- pick(yes, node$max_answers)
         return(sus_yesno(yes, setdiff(o$code, yes), node$options$code))
       }
       m <- if (is.na(node$max_answers)) nrow(o) else min(node$max_answers, nrow(o))
@@ -171,7 +185,7 @@ gen_value <- function(G, node, rv) {
       pick <- choose_codes(G, node, o$code, k)
       tc <- intersect(node$targets, o$code)
       if (node$varname %in% G$tune$focus && length(tc) && stats::runif(1) < 0.6) {
-        t1 <- if (length(tc) == 1) tc else sample(tc, 1)
+        t1 <- pick(tc)
         if (!(t1 %in% pick)) pick[length(pick)] <- t1
       }
       sus_multi(pick)

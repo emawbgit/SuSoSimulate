@@ -379,7 +379,7 @@ rt_method <- function(obj, name, ...) {
 
 # Static members / calls -----------------------------------------------------
 rt_static_member <- function(cls, name) {
-  key <- paste0(tolower(cls), ".", name)
+  key <- paste0(tolower(cls), ".", tolower(name))
   switch(key,
     "datetime.now" = , "datetime.utcnow" = .get_ctx(parent.frame())$st$now,
     "datetime.today" = as.Date(.get_ctx(parent.frame())$st$now),

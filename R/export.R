@@ -212,13 +212,32 @@ dedupe_labels <- function(vl) {
   stats::setNames(as.numeric(vl), nm)
 }
 
+# Stata names: <= 32 chars, unique. Long names are shortened and de-duplicated
+# with a numeric suffix that still fits in 32 characters.
+stata_names <- function(nm) {
+  long <- nchar(nm) > 32
+  if (!any(long)) return(nm)
+  out <- substr(nm, 1, 32)
+  for (i in which(duplicated(out) | (long & out %in% out[duplicated(out)]))) {
+    k <- 1L
+    repeat {
+      suf <- paste0("_", k)
+      cand <- paste0(substr(nm[i], 1, 32 - nchar(suf)), suf)
+      if (!(cand %in% out[-i])) { out[i] <- cand; break }
+      k <- k + 1L
+    }
+  }
+  out
+}
+
 stata_safe_names <- function(df) {
   nm <- names(df)
-  long <- nchar(nm) > 32
-  if (any(long)) {
-    warning("Truncating long Stata names: ", paste(nm[long], collapse = ", "), call. = FALSE)
-    nm[long] <- substr(nm[long], 1, 32)
-    names(df) <- make.unique(nm, sep = "_")
+  new <- stata_names(nm)
+  if (!identical(nm, new)) {
+    ch <- nm != new
+    warning("Stata names limited to 32 characters; renamed: ",
+            paste(nm[ch], new[ch], sep = " -> ", collapse = ", "), call. = FALSE)
+    names(df) <- new
   }
   df
 }

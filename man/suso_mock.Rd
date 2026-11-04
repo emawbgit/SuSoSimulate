@@ -11,7 +11,8 @@ suso_mock(
   out_dir = "mock_export",
   seed = NULL,
   zip = FALSE,
-  verbose = TRUE
+  verbose = TRUE,
+  progress = NULL
 )
 }
 \arguments{
@@ -29,6 +30,8 @@ or a `suso_questionnaire` object.}
 \item{zip}{Also write `<questionnaire>_STATA_All.zip` and `<questionnaire>_Paradata_All.zip`.}
 
 \item{verbose}{Print progress.}
+
+\item{progress}{Optional callback `function(value, detail)` (value in 0..1), used by the Shiny app.}
 }
 \value{
 Object of class `suso_mock`: `$data` (named list of data frames, one

@@ -11,7 +11,7 @@
 #'   least-used options (drives routing coverage).
 #' @param roster_mean Mean rows for numeric/list-triggered rosters.
 #' @param max_roster_default Cap for roster sizes when no validation bound exists.
-#' @param roster_sizes Named list: trigger variable -> `c(min, max)` or function().
+#' @param roster_sizes Named list: trigger variable -> `c(min, max)`, a fixed size, or function().
 #' @param generators Named list: variable -> `function(rv, unit)` returning a value.
 #' @param numeric_roster_base First row code of numeric-triggered rosters (SuSo: 1).
 #' @param answer_hidden Fill hidden-scope questions (usually preloaded in SuSo).
@@ -28,6 +28,8 @@
 #' @param na_string Value for enabled-but-unanswered strings (SuSo: "##N/A##").
 #' @param null_share Scales how often questions tested with `== null` / `IsAnswered()`
 #'   are left unanswered (times `target_prob`), so null branches get covered.
+#' @param special_value_rate Share of numeric answers drawn from the question's special
+#'   values (e.g. -98 "Don't know"), when it has any (still subject to validations).
 #' @param pause_rate,correction_rate,comment_rate Paradata realism knobs.
 #' @param max_passes Max routing passes per interview until answers are stable.
 #' @param max_tries Max re-draws per question to satisfy validations.
@@ -42,9 +44,42 @@ suso_mock_config <- function(item_nonresponse = 0, error_rate = 0, target_prob =
                              allow_augment = FALSE, unsupported_p = 0.5, max_passes = 5,
                              max_tries = 25, max_roster_rows = 200,
                              na_numeric = NA_real_, na_string = "##N/A##",
-                             null_share = 0.25,
+                             null_share = 0.25, special_value_rate = 0.03,
                              pause_rate = 0.3, correction_rate = 0.04, comment_rate = 0.004) {
-  structure(as.list(environment()), class = "suso_mock_config")
+  cfg <- structure(as.list(environment()), class = "suso_mock_config")
+  validate_config(cfg)
+  cfg
+}
+
+validate_config <- function(cfg) {
+  share <- c("item_nonresponse", "error_rate", "target_prob", "supervisor_answer_rate", "unsupported_p",
+             "null_share", "special_value_rate", "pause_rate", "correction_rate", "comment_rate")
+  for (a in share) {
+    v <- cfg[[a]]
+    if (!is.numeric(v) || length(v) != 1 || is.na(v) || v < 0 || v > 1)
+      stop(sprintf("`%s` must be a single number between 0 and 1 (got %s).", a, format(v)), call. = FALSE)
+  }
+  for (a in c("roster_mean", "max_roster_default", "repair_budget", "max_passes", "max_tries", "max_roster_rows")) {
+    v <- cfg[[a]]
+    if (!is.numeric(v) || length(v) != 1 || is.na(v) || v < 0) stop(sprintf("`%s` must be a non-negative number.", a), call. = FALSE)
+  }
+  if (cfg$max_passes < 1 || cfg$max_tries < 1) stop("`max_passes` and `max_tries` must be >= 1.", call. = FALSE)
+  sm <- cfg$status_mix
+  ok_codes <- c("65", "100", "120", "125", "130")
+  if (!is.numeric(sm) || is.null(names(sm)) || !all(names(sm) %in% ok_codes) || any(sm < 0) || sum(sm) <= 0)
+    stop("`status_mix` must be a named numeric vector with names among ", paste(ok_codes, collapse = ", "),
+         " and non-negative shares, e.g. c(\"100\" = .2, \"120\" = .3, \"130\" = .5).", call. = FALSE)
+  if (!grepl("^[+-]?\\d{1,2}(:?\\d{2})?$", cfg$tz_offset)) stop("`tz_offset` must look like \"+03:00\" or \"-05:00\".", call. = FALSE)
+  if (!is.list(cfg$roster_sizes) || (length(cfg$roster_sizes) && is.null(names(cfg$roster_sizes))))
+    stop("`roster_sizes` must be a named list, e.g. list(hhsize = c(1, 12)).", call. = FALSE)
+  for (v in names(cfg$roster_sizes)) {
+    r <- cfg$roster_sizes[[v]]
+    if (!(is.function(r) || (is.numeric(r) && length(r) %in% 1:2 && all(r >= 0) && r[1] <= r[length(r)])))
+      stop(sprintf("`roster_sizes$%s` must be c(min, max), a single size or a function.", v), call. = FALSE)
+  }
+  if (!is.list(cfg$generators) || !all(vapply(cfg$generators, is.function, TRUE)))
+    stop("`generators` must be a named list of functions(rv, unit).", call. = FALSE)
+  invisible(TRUE)
 }
 
 #' Sampling / fieldwork design
@@ -73,13 +108,38 @@ suso_design <- function(n_psu = 10, ssu_per_psu = 10, strata_var = NULL, n_strat
                         start_date = Sys.Date(), interviews_per_day = 4,
                         bbox = c(29.5, -1.5, 35.0, 4.2), assignment_per = c("interview", "psu")) {
   assignment_per <- match.arg(assignment_per)
+  start_date <- tryCatch(as.Date(start_date), error = function(e) NA)
+  if (length(start_date) != 1 || is.na(start_date)) stop("`start_date` must be a date, e.g. \"2025-03-01\".", call. = FALSE)
+  if (is.null(frame)) {
+    if (!is.numeric(n_psu) || length(n_psu) != 1 || n_psu < 1) stop("`n_psu` must be a positive integer.", call. = FALSE)
+    n_psu <- as.integer(n_psu)
+    if (!is.numeric(ssu_per_psu) || any(ssu_per_psu < 1) || !(length(ssu_per_psu) %in% c(1, n_psu)))
+      stop("`ssu_per_psu` must be a positive integer, or a vector with one value per PSU.", call. = FALSE)
+    ssu_per_psu <- as.integer(ssu_per_psu)
+  } else {
+    if (!is.data.frame(frame) || !nrow(frame)) stop("`frame` must be a data.frame with at least one row.", call. = FALSE)
+  }
+  if (!is.numeric(bbox) || length(bbox) != 4 || bbox[1] >= bbox[3] || bbox[2] >= bbox[4] ||
+      any(abs(bbox[c(2, 4)]) > 90) || any(abs(bbox[c(1, 3)]) > 180))
+    stop("`bbox` must be c(xmin, ymin, xmax, ymax) in decimal degrees.", call. = FALSE)
+  if (!is.null(n_interviewers) && (!is.numeric(n_interviewers) || n_interviewers < 1)) stop("`n_interviewers` must be >= 1.", call. = FALSE)
+  if (!is.numeric(interviews_per_day) || interviews_per_day < 1) stop("`interviews_per_day` must be >= 1.", call. = FALSE)
+  if (!is.list(preload)) stop("`preload` must be a named list.", call. = FALSE)
   structure(as.list(environment()), class = "suso_design")
 }
 
 build_frame <- function(design, qn) {
   d <- design
+  for (v in c("strata_var", "psu_var", "ssu_var")) {
+    nm <- d[[v]]
+    if (!is.null(nm) && is.null(env_get(qn$by_name, nm))) {
+      warning(sprintf("`%s = \"%s\"` is not a variable of this questionnaire; ignored.", v, nm), call. = FALSE)
+      d[v] <- list(NULL)
+    }
+  }
   if (!is.null(d$frame)) {
     fr <- as.data.frame(d$frame, stringsAsFactors = FALSE)
+    fr[] <- lapply(fr, function(x) if (is.factor(x)) as.character(x) else x)
     n <- nrow(fr)
     psu <- if (!is.null(fr$.psu)) as.integer(factor(fr$.psu, levels = unique(fr$.psu)))
            else if (!is.null(d$psu_var) && !is.null(fr[[d$psu_var]])) as.integer(factor(fr[[d$psu_var]], levels = unique(fr[[d$psu_var]])))
