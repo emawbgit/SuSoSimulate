@@ -55,8 +55,7 @@ With it you can:
 ### Requirements
 
 - **R ≥ 4.1** on Windows, macOS or Linux. The package is pure R, so no compiler or Rtools is needed.
-- **Required packages:** `jsonlite`, `haven`.
-- **Required packages:** `zip` is also required (installed automatically).
+- **Required packages:** `jsonlite`, `haven`, `zip` (installed automatically with the package).
 - **Optional packages:**
   - `readxl` — reusable categories stored as `.xlsx` (standard in Designer/HQ archives).
   - `pdftools` — PDF input.
@@ -310,11 +309,12 @@ res <- suso_mock(
 | `error_rate` | 0 | Probability that a question with validations gets a value violating them. This feeds `has__errors`, `interview__errors` and `QuestionDeclaredInvalid` |
 | `target_prob` | 0.5 | How often generators steer toward branch constants or least-used options |
 | `roster_mean`, `max_roster_default` | 4, 12 | Size of variable rosters without explicit bounds |
-| `roster_sizes` | `list()` | `trigger = c(min, max)` or `trigger = function()` |
+| `roster_sizes` | `list()` | `trigger = c(min, max)`, a fixed size (`trigger = 5`) or `trigger = function()`. Always overrides branch steering |
 | `generators` | `list()` | Custom answer generators: `var = function(rv, unit) value`. Here `rv` is the roster vector and `unit` holds psu, ssu, stratum, interviewer, start_time, lat, lon and preload |
 | `numeric_roster_base` | 1 | First row code of numeric-triggered rosters |
 | `answer_hidden` | `TRUE` | Fill hidden-scope questions (in SuSo these usually come from preloading) |
 | `supervisor_answer_rate` | 0.3 | Share of supervisor/HQ-scope questions answered |
+| `special_value_rate` | 0.03 | Share of numeric answers drawn from the question's special values (e.g. `-98 "Don't know"`), still subject to validations |
 | `null_share` | 0.25 | Leaves questions tested with `== null` or `IsAnswered()` blank sometimes, so both branches occur |
 | `status_mix` | 20/30/50% | Final status shares: 100 Completed, 120 ApprovedBySupervisor, 130 ApprovedByHeadquarters, 65 RejectedBySupervisor, 125 RejectedByHeadquarters |
 | `tz_offset` | `"+03:00"` | Local UTC offset of the field team |
@@ -575,7 +575,7 @@ The test also translated every one of the questionnaire's 237 enabling condition
 | `Reusable categories … not found: using placeholder codes 1-5` | Use the full Designer or HQ zip, which contains `Categories/*.xlsx`, and install `readxl` |
 | Many `TRUE only` / `FALSE only` rows without an `unreachable` note | Increase `ssu_per_psu`, `repair_budget` (e.g. 1000) or `target_prob`; or set `allow_augment = TRUE` |
 | `! N interviews did not reach a stable state` | The questionnaire has circular conditions. Increase `max_passes`, or check the reported items |
-| `Truncating long Stata names` | A generated column name (e.g. `var__Timestamp`) exceeds 32 characters; shorten the variable name in Designer |
+| `Stata names limited to 32 characters; renamed: …` | A generated column name (e.g. `var__Timestamp`) is over 32 characters. It is shortened with a collision-safe suffix; to avoid this, shorten the variable name in Designer |
 | Text looks garbled in Stata | Use Stata 14 or later (the files are written as version 14, UTF-8) |
 | `markitdown CLI not available` | `pip install "markitdown[pdf]"`, or use `pdf_engine = "pdftools"` |
 | `The app needs: shiny, bslib, DT` | `install.packages(c("shiny", "bslib", "DT"))` |
