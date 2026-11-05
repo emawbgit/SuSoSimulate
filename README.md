@@ -2,7 +2,7 @@
 
 **Mock data and paradata generator for Survey Solutions questionnaires.**
 
-SuSoSimulate reads a [Survey Solutions](https://mysurvey.solutions) (SuSo) questionnaire, runs its skip logic, and produces synthetic interviews that are fully routed and pass validation. The output is in Stata format and has the same multi-file layout as a real Headquarters export: a main file, one file per roster level, the system files and the paradata.
+SuSoSimulate reads a [Survey Solutions](https://mysurvey.solutions) (SuSo) questionnaire, runs its skip logic, and produces synthetic interviews that are fully routed and pass validation. The output is a Stata or Tabular export with the same multi-file layout as a real Headquarters download: a main file, one file per roster level, the system files and the paradata.
 
 With it you can:
 
@@ -132,7 +132,7 @@ Expected result: `[ FAIL 0 | WARN 0 | SKIP 0 | PASS 237 ]`. The suite has nine f
 | `test-edge-cases.R` | A hostile fixture questionnaire (`tests/testthat/fixtures/edge_cases.json`), checked for referential integrity and routing semantics across all files (see below) |
 | `test-validation.R` | Clear errors for invalid arguments and malformed files; safe helpers; factor columns in frames; paradata encoding (UTF-8 BOM, CRLF); zip output |
 | `test-app.R` | The Shiny server workflow (load → generate → download zip / settings → re-upload settings → bad file), and a run of the R script the app writes |
-| `test-export-layout.R` | Export folder `<Q>_SuSoMock_<timestamp>`, versioned zip names and zip-root contents, `export__info.json`, re-reading the exported STATA zip (version detection), paradata event order and roles (`suso_read_paradata()`) |
+| `test-export-layout.R` | Export folder `<Q>_<version>_SuSoMock_<timestamp>`, versioned zip names and zip-root contents, `export__info.json`, re-reading the exported STATA zip (version detection), paradata event order and roles (`suso_read_paradata()`) |
 | `test-formats-consistency.R` | Tabular export (`.tab`/`.do`, BOM/CRLF, `-999999999` vs Stata `.a`), `suso_validate_mock()` on both assignment modes and on a corrupted result, interviewer question and cover-first order, GeoJSON boundary, geography (area) measures, `new decimal?[]{...}` and `Quest.IRnd()` |
 | `test-pdf.R` | PDF reader on a synthetic printout (integer types, wrapped options, conditions and validations); `ConsistsOf`; code-like text answers |
 | `helper-integrity.R` | Shared checker: unique keys, every roster row has a parent row, no orphan interviews, sequential paradata order, parseable timestamps |
@@ -165,7 +165,7 @@ res <- suso_mock(
   demo,
   design = suso_design(n_psu = 4, ssu_per_psu = 6,
                        strata_var = "region", psu_var = "ea_id", ssu_var = "hh_id"),
-  out_dir = "mock_demo", seed = 42)   # -> mock_demo/demo_hh_SuSoMock_<timestamp>/
+  out_dir = "mock_demo", seed = 42)   # -> mock_demo/demo_hh_1_SuSoMock_<timestamp>/
 
 res                           # summary + coverage + export folder
 res$export_dir
@@ -217,7 +217,7 @@ Download the export of any questionnaire from Headquarters. The Stata format wor
 ```r
 res <- suso_mock("MYSURVEY_18_STATA_All.zip",          # version 18 is read from the name
                  design = suso_design(n_psu = 10, ssu_per_psu = 10), seed = 1)
-# -> ./MYSURVEY_SuSoMock_<timestamp>/MYSURVEY_18_STATA_All.zip, MYSURVEY_18_Paradata_All.zip
+# -> ./MYSURVEY_18_SuSoMock_<timestamp>/MYSURVEY_18_STATA_All.zip, MYSURVEY_18_Paradata_All.zip
 res$coverage$branches[res$coverage$branches$status != "covered", ]
 ```
 
@@ -238,7 +238,7 @@ The app follows the workflow of DIME's [iehfc](https://github.com/dime-worldbank
 | **2. Sample design** | PSUs, interviews per PSU (the total updates as you type, and tab 4 flags results generated with older settings), and the identifying questions that receive the stratum, PSU and household ids, pre-guessed from the cover page. The question recording the interviewer is detected. Draw the survey area on the OpenStreetMap (polygon or rectangle) or upload a GeoJSON (e.g. from geojson.io); PSU centroids fall inside it. Also set field teams, the calendar and the UTC offset. Optionally upload a preload frame (CSV). |
 | **3. Settings** | A min–max slider for each numeric or list roster trigger, bounded by its validation. Also item non-response, validation-error injection, special values, branch-steering strength, coverage repair and budget, final status shares, and the seed. |
 | **4. Generate & review** | One click generates the data, with a progress bar. Value boxes show interviews, branch coverage, option coverage and paradata events. Tabs hold the coverage report (uncovered branches first, with unreachable notes), option coverage, a browser for every export file, the paradata, and the system files. |
-| **5. Export** | Choose Stata or Tabular, set the questionnaire version (pre-filled from an uploaded HQ export), then download `<Q>_<version>_SuSoMock_<timestamp>.zip` or save the same folder to a path on your computer: `<Q>_<version>_STATA_All.zip`, `<Q>_<version>_Paradata_All.zip`, coverage reports, sample frame and settings, plus `reproduce_mock.R` and `load_mock.do`. You can also save the settings as JSON and load them back later (or share them with the team), and download the template code: an R script that reproduces the run, and a Stata do-file that loads every file and merges each roster onto its parent. |
+| **5. Export** | Choose Stata or Tabular, set the questionnaire version (pre-filled from an uploaded HQ export), then download `<Q>_<version>_SuSoMock_<timestamp>.zip` or save the same folder to a path on your computer: `<Q>_<version>_STATA_All.zip` (or `_Tabular_All.zip`), `<Q>_<version>_Paradata_All.zip`, `assignments.tab`, coverage reports, sample frame and settings, plus `reproduce_mock.R` and `load_mock.do`. You can also save the settings as JSON and load them back later (or share them with the team), and download the template code: an R script that reproduces the run, and a Stata do-file that loads every file and merges each roster onto its parent. |
 
 <p align="center">
 <img src="man/figures/app-1_questionnaire.png" width="49%" alt="Questionnaire tab"/>
@@ -409,10 +409,10 @@ In R, `suso_mock()` returns a `suso_mock` object:
 | `$coverage` | `$branches`, `$options` and `$summary` |
 | `$frame` | Sampling frame, linked to the interview keys |
 | `$questionnaire` | Parsed questionnaire |
-| `$config`, `$design`, `$version` | Settings used |
+| `$config`, `$design`, `$version`, `$format` | Settings used |
 | `$export_dir` | Folder written to |
 
-`write_suso_mock(res, dir, version = 19)` writes a result again, e.g. under another folder or version.
+`write_suso_mock(res, dir, version = 19, format = "tabular")` writes a result again, e.g. under another folder, version or format.
 
 ---
 
@@ -496,7 +496,7 @@ suso_compile_expression("members.Where(x => x.age >= 15).Any(x => x.work.Contain
 
 ## Export conventions
 
-These reproduce a Survey Solutions 24.x Stata export.
+These reproduce a Survey Solutions 24.x Stata and Tabular export.
 
 | Element | Convention |
 |---|---|
@@ -546,7 +546,7 @@ Timestamps are UTC with milliseconds; `tz_offset` uses .NET format (`03:00:00`).
 
 - `interview__actions` — action codes 0–21 and role codes, in UTC.
 - `interview__diagnostics` — includes `interview__duration` in `DD.HH:MM:SS` (active time, excluding pauses) and `n_questions_unanswered`.
-- `interview__errors` — roster, id1–id4, variable, `type`, `message__number`, message.
+- `interview__errors` — roster, one `idN` per roster nesting level, variable, `type`, `message__number`, message (errors only; warnings are not listed).
 - `interview__comments`.
 - `assignment__actions` — action codes 0–9.
 
@@ -555,7 +555,7 @@ Timestamps are UTC with milliseconds; `tz_offset` uses .NET format (`03:00:00`).
 ## Working with the output in Stata
 
 ```stata
-cd "mock_demo/demo_hh_SuSoMock_20250301_101500/demo_hh_1_STATA_All"
+cd "mock_demo/demo_hh_1_SuSoMock_20250301_101500/demo_hh_1_STATA_All"
 
 * household file
 use demo_hh, clear
