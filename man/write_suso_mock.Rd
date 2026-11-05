@@ -2,19 +2,37 @@
 % Please edit documentation in R/suso_mock.R
 \name{write_suso_mock}
 \alias{write_suso_mock}
-\title{Write a `suso_mock` result to disk}
+\title{Write a `suso_mock` result to disk, laid out like a Survey Solutions HQ download}
 \usage{
-write_suso_mock(x, out_dir, zip = FALSE, verbose = TRUE)
+write_suso_mock(
+  x,
+  out_dir = ".",
+  version = x$version,
+  zip = TRUE,
+  timestamp = Sys.time(),
+  verbose = TRUE
+)
 }
 \arguments{
 \item{x}{Result of [suso_mock()].}
 
-\item{out_dir}{Output folder.}
+\item{out_dir}{Folder in which the export folder is created.}
 
-\item{zip}{Also create SuSo-style zip archives.}
+\item{version}{Questionnaire version (default: the one used by [suso_mock()]).}
+
+\item{zip}{Also create the HQ-style zip archives.}
+
+\item{timestamp}{Time used in the export folder name.}
 
 \item{verbose}{Print progress.}
 }
+\value{
+The export folder path, invisibly.
+}
 \description{
-Write a `suso_mock` result to disk
+Creates `<out_dir>/<Q>_SuSoMock_<timestamp>/` containing
+`<Q>_<version>_STATA_All` and `<Q>_<version>_Paradata_All` (folders and, with
+`zip = TRUE`, the matching `.zip` archives with files at the archive root,
+as HQ produces them), plus coverage reports, the sample frame and settings.
+`<Q>` is the questionnaire variable name, which also names the main `.dta`.
 }

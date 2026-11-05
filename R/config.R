@@ -30,6 +30,10 @@
 #'   are left unanswered (times `target_prob`), so null branches get covered.
 #' @param special_value_rate Share of numeric answers drawn from the question's special
 #'   values (e.g. -98 "Don't know"), when it has any (still subject to validations).
+#' @param restart_rate Share of interviews the interviewer re-opens after completing
+#'   (`Completed > Paused > Restarted > ... > Completed` in paradata).
+#' @param rejection_rate Share of interviews rejected once by HQ before their final status
+#'   (`RejectedBySupervisor > ReceivedByInterviewer > ... > Completed`).
 #' @param pause_rate,correction_rate,comment_rate Paradata realism knobs.
 #' @param max_passes Max routing passes per interview until answers are stable.
 #' @param max_tries Max re-draws per question to satisfy validations.
@@ -44,7 +48,7 @@ suso_mock_config <- function(item_nonresponse = 0, error_rate = 0, target_prob =
                              allow_augment = FALSE, unsupported_p = 0.5, max_passes = 5,
                              max_tries = 25, max_roster_rows = 200,
                              na_numeric = NA_real_, na_string = "##N/A##",
-                             null_share = 0.25, special_value_rate = 0.03,
+                             null_share = 0.25, special_value_rate = 0.03, restart_rate = 0.15, rejection_rate = 0.2,
                              pause_rate = 0.3, correction_rate = 0.04, comment_rate = 0.004) {
   cfg <- structure(as.list(environment()), class = "suso_mock_config")
   validate_config(cfg)
@@ -53,7 +57,8 @@ suso_mock_config <- function(item_nonresponse = 0, error_rate = 0, target_prob =
 
 validate_config <- function(cfg) {
   share <- c("item_nonresponse", "error_rate", "target_prob", "supervisor_answer_rate", "unsupported_p",
-             "null_share", "special_value_rate", "pause_rate", "correction_rate", "comment_rate")
+             "null_share", "special_value_rate", "restart_rate", "rejection_rate",
+             "pause_rate", "correction_rate", "comment_rate")
   for (a in share) {
     v <- cfg[[a]]
     if (!is.numeric(v) || length(v) != 1 || is.na(v) || v < 0 || v > 1)

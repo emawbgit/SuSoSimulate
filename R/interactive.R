@@ -75,8 +75,9 @@ suso_mock_interactive <- function(answers = list()) {
   rep <- yn("coverage_repair", "Repair coverage so every reachable branch is hit? (y/n)", "y")
   budget <- if (rep) num("repair_budget", "Max candidate interviews for repair", 400) else 0
   seed <- num("seed", "Random seed", 12345)
-  out <- ask("out_dir", "Output folder", "mock_export")
-  zip <- yn("zip", "Also create SuSo-style zip archives? (y/n)", "n")
+  ver <- num("version", "Questionnaire version number for the export names", if (is.na(qn$hq_version)) 1 else qn$hq_version)
+  out <- ask("out_dir", "Folder where <Q>_SuSoMock_<timestamp> is created", ".")
+  zip <- yn("zip", "Also create HQ-style zip archives? (y/n)", "y")
 
   des <- suso_design(n_psu = n_psu, ssu_per_psu = ssu, strata_var = strata_var, n_strata = n_strata,
                      psu_var = psu_var, ssu_var = ssu_var, frame = frame, n_interviewers = n_int,
@@ -86,8 +87,8 @@ suso_mock_interactive <- function(answers = list()) {
   n_tot <- if (is.null(frame)) n_psu * ssu else nrow(frame)
   cat(sprintf("\nAbout to generate %d interviews into '%s' (seed %s).\n", n_tot, out, seed))
   if (!yn("confirm", "Proceed? (y/n)", "y")) { cat("Cancelled.\n"); return(invisible(NULL)) }
-  res <- suso_mock(qn, design = des, config = cfg, out_dir = out, seed = seed, zip = zip)
+  res <- suso_mock(qn, design = des, config = cfg, out_dir = out, version = ver, seed = seed, zip = zip)
   print(res)
-  cat("\nReproduce non-interactively with the settings saved in ", file.path(out, "mock_config.json"), "\n", sep = "")
+  cat("\nReproduce non-interactively with the settings saved in ", file.path(res$export_dir, "mock_config.json"), "\n", sep = "")
   invisible(res)
 }

@@ -152,8 +152,12 @@ app_ui <- function() {
     bslib::nav_panel("5. Export", value = "x",
       bslib::layout_columns(col_widths = c(4, 4, 4),
         bslib::card(bslib::card_header("Mock export"),
-          ui_hint("Zip with <qvar>_STATA_All (all .dta incl. system files), <qvar>_Paradata_All (paradata.tab), coverage reports, sample frame and settings."),
-          shiny::downloadButton("dl_zip", "Download everything (.zip)", class = "btn-primary w-100")),
+          ui_hint("Folder <Q>_SuSoMock_<timestamp> with <Q>_<version>_STATA_All.zip and <Q>_<version>_Paradata_All.zip (as downloaded from HQ), coverage reports, sample frame and settings."),
+          shiny::numericInput("version", "Questionnaire version (HQ)", value = 1, min = 1, step = 1),
+          shiny::downloadButton("dl_zip", "Download everything (.zip)", class = "btn-primary w-100 mb-3"),
+          shiny::textInput("save_dir", "Or save to a folder on this computer", value = getwd()),
+          shiny::actionButton("save_btn", "Save export to folder", class = "w-100"),
+          shiny::uiOutput("save_status")),
         bslib::card(bslib::card_header("Settings"),
           ui_hint("Save the current settings and re-load them later (or share them with your team)."),
           shiny::downloadButton("dl_params", "Download settings (.json)", class = "w-100 mb-2"),
@@ -171,7 +175,7 @@ app_ui <- function() {
 
 # ----------------------------------------------------------------------- server
 app_server <- function(input, output, session) {
-  rv <- shiny::reactiveValues(qn = NULL, qpath = NULL, qname = NULL, res = NULL, frame = NULL, err = NULL, log = NULL)
+  rv <- shiny::reactiveValues(qn = NULL, qpath = NULL, qname = NULL, res = NULL, frame = NULL, err = NULL, log = NULL, saved = NULL)
   pct <- function(x) sprintf("%.1f%%", 100 * x)
   dt <- function(df, ...) DT::datatable(df, rownames = FALSE, filter = "none",
                                         options = list(pageLength = 15, scrollX = TRUE, ...))
@@ -188,6 +192,7 @@ app_server <- function(input, output, session) {
       return(invisible())
     }
     rv$qn <- qn; rv$qpath <- path; rv$qname <- name; rv$err <- NULL; rv$res <- NULL; rv$log <- msgs
+    if (!is.na(qn$hq_version)) shiny::updateNumericInput(session, "version", value = qn$hq_version)
     shiny::showNotification(sprintf("Loaded '%s'", qn$title), type = "message")
   }
   shiny::observeEvent(input$qfile, load_q(input$qfile$datapath, input$qfile$name))
@@ -310,7 +315,7 @@ app_server <- function(input, output, session) {
                     roster_mean = input$roster_mean, roster_sizes = rs, status_mix = sm, tz_offset = input$tz_offset,
                     coverage_repair = isTRUE(input$coverage_repair), repair_budget = input$repair_budget,
                     allow_augment = isTRUE(input$allow_augment)),
-      seed = input$seed)
+      seed = input$seed, version = input$version)
   })
 
   build_args <- function(s) {
@@ -379,16 +384,29 @@ app_server <- function(input, output, session) {
   })
 
   # ---- 5 export
+  export_to <- function(dir, ts) {
+    root <- suppressWarnings(write_suso_mock(rv$res, dir, version = input$version, timestamp = ts, verbose = FALSE))
+    writeLines(app_r_code(settings(), rv$qname, !is.null(rv$frame)), file.path(root, "reproduce_mock.R"))
+    writeLines(app_do_code(rv$res$questionnaire, input$version), file.path(root, "load_mock.do"))
+    root
+  }
+  dl_ts <- shiny::reactiveVal(Sys.time())
   output$dl_zip <- shiny::downloadHandler(
-    filename = function() sprintf("%s_mock_%s.zip", rv$res$questionnaire$varname %||% "suso", format(Sys.time(), "%Y%m%d_%H%M")),
+    filename = function() { dl_ts(Sys.time())
+      sprintf("%s_SuSoMock_%s.zip", rv$res$questionnaire$varname %||% "suso", format(dl_ts(), "%Y%m%d_%H%M%S")) },
     content = function(file) {
       shiny::req(rv$res)
       td <- tempfile("susosim_"); dir.create(td)
-      suppressWarnings(write_suso_mock(rv$res, td, verbose = FALSE))
-      writeLines(app_r_code(settings(), rv$qname, !is.null(rv$frame)), file.path(td, "reproduce_mock.R"))
-      writeLines(app_do_code(rv$res$questionnaire), file.path(td, "load_mock.do"))
-      zip::zipr(file, list.files(td, full.names = TRUE))
+      root <- export_to(td, dl_ts())
+      zip::zipr(file, root)
     })
+  shiny::observeEvent(input$save_btn, {
+    if (is.null(rv$res)) { shiny::showNotification("Generate data first (tab 4).", type = "warning"); return() }
+    root <- tryCatch(export_to(input$save_dir, Sys.time()), error = function(e) e)
+    if (inherits(root, "error")) shiny::showNotification(paste("Save failed:", conditionMessage(root)), type = "error", duration = 10)
+    else rv$saved <- root
+  })
+  output$save_status <- shiny::renderUI(if (!is.null(rv$saved)) shiny::div(class = "alert alert-success mt-2 small", "Saved to ", shiny::code(rv$saved)))
   output$dl_params <- shiny::downloadHandler(
     filename = function() "susosimulate_settings.json",
     content = function(file) jsonlite::write_json(settings(), file, auto_unbox = TRUE, pretty = TRUE, null = "null"))
@@ -405,7 +423,7 @@ app_server <- function(input, output, session) {
     if (!is.null(d$assignment_per)) shiny::updateSelectInput(session, "assignment_per", selected = d$assignment_per)
     for (v in c("item_nonresponse", "error_rate", "special_value_rate", "target_prob"))
       if (!is.null(cf[[v]])) shiny::updateSliderInput(session, v, value = cf[[v]])
-    upd_num("roster_mean", cf$roster_mean); upd_num("repair_budget", cf$repair_budget); upd_num("seed", p$seed)
+    upd_num("roster_mean", cf$roster_mean); upd_num("repair_budget", cf$repair_budget); upd_num("seed", p$seed); upd_num("version", p$version)
     if (!is.null(cf$tz_offset)) shiny::updateTextInput(session, "tz_offset", value = cf$tz_offset)
     if (!is.null(cf$coverage_repair)) bslib::update_switch("coverage_repair", value = isTRUE(cf$coverage_repair), session = session)
     if (!is.null(cf$allow_augment)) bslib::update_switch("allow_augment", value = isTRUE(cf$allow_augment), session = session)
@@ -417,9 +435,9 @@ app_server <- function(input, output, session) {
   output$dl_r <- shiny::downloadHandler(filename = function() "reproduce_mock.R",
     content = function(file) writeLines(app_r_code(settings(), rv$qname, !is.null(rv$frame)), file))
   output$dl_do <- shiny::downloadHandler(filename = function() "load_mock.do",
-    content = function(file) { shiny::req(rv$qn); writeLines(app_do_code(rv$qn), file) })
+    content = function(file) { shiny::req(rv$qn); writeLines(app_do_code(rv$qn, input$version), file) })
   output$code_r <- shiny::renderText(paste(app_r_code(settings(), rv$qname, !is.null(rv$frame)), collapse = "\n"))
-  output$code_do <- shiny::renderText({ shiny::req(rv$qn); paste(app_do_code(rv$qn), collapse = "\n") })
+  output$code_do <- shiny::renderText({ shiny::req(rv$qn); paste(app_do_code(rv$qn, input$version), collapse = "\n") })
 }
 
 # ---------------------------------------------------------------- code templates
@@ -452,15 +470,16 @@ app_r_code <- function(s, qname = NULL, has_frame = FALSE) {
     paste0(arg(dd), ",\n    start_date = as.Date(\"", d$start_date, "\")),"),
     "  config = suso_mock_config(",
     paste0(arg(cf), "),"),
-    sprintf('  out_dir = "mock_export", seed = %s)', fmt_num(s$seed %||% 1)),
+    sprintf('  out_dir = ".", version = %s, seed = %s)   # writes <Q>_SuSoMock_<timestamp>/', fmt_num(s$version %||% 1), fmt_num(s$seed %||% 1)),
     "", "res                         # coverage summary", "res$coverage$branches       # per-condition detail")
 }
 
-app_do_code <- function(qn) {
+app_do_code <- function(qn, version = 1) {
   main <- qn$varname
+  stem <- sprintf("%s_%d", main, as.integer(version %||% 1))
   out <- c("* Load and merge SuSoSimulate output (same layout as a Survey Solutions Stata export)",
-           "* Set the folder below, then run.",
-           sprintf('global mock "mock_export/%s_STATA_All"', main), "",
+           sprintf("* cd into the %s_SuSoMock_<timestamp> folder, then run.", main),
+           sprintf('global mock "%s_STATA_All"', stem), "",
            sprintf('use "$mock/%s.dta", clear', main), "describe, short", "tab interview__status", "")
   lv <- qn$levels[setdiff(names(qn$levels), "main")]
   for (k in names(lv)) {
@@ -474,5 +493,5 @@ app_do_code <- function(qn) {
                      paste(chain, collapse = " "), pfile),
              sprintf("isid interview__key %s", paste(c(chain, l$id_col), collapse = " ")), "")
   }
-  c(out, "* Paradata", sprintf('* cd "mock_export/%s_Paradata_All"', main), "* do paradata.do")
+  c(out, "* Paradata", sprintf('* cd "%s_Paradata_All"', stem), "* do paradata.do")
 }

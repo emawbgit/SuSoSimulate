@@ -20,12 +20,14 @@ test_that("demo questionnaire: structure, routing and full coverage", {
   # coverage
   expect_equal(unname(r$coverage$summary[["branch_coverage"]]), 1)
   # files on disk
-  dd <- file.path(out, "demo_hh_STATA_All")
+  expect_match(basename(r$export_dir), "^demo_hh_SuSoMock_\\d{8}_\\d{6}$")
+  expect_equal(dirname(r$export_dir), normalizePath(out))
+  dd <- file.path(r$export_dir, "demo_hh_1_STATA_All")
   expect_true(all(file.exists(file.path(dd, c("demo_hh.dta", "members.dta", "interview__actions.dta",
                                               "interview__diagnostics.dta", "interview__errors.dta")))))
   back <- haven::read_dta(file.path(dd, "members.dta"))
   expect_equal(attr(back$members__id, "label"), "Id in members")
-  p <- readLines(file.path(out, "demo_hh_Paradata_All", "paradata.tab"), n = 2, encoding = "UTF-8")
+  p <- readLines(file.path(r$export_dir, "demo_hh_1_Paradata_All", "paradata.tab"), n = 2, encoding = "UTF-8")
   expect_match(p[1], "interview__id\torder\tevent\tresponsible\trole\ttimestamp_utc\ttz_offset\tparameters")
 })
 

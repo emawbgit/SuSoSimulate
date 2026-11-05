@@ -34,9 +34,9 @@ test_that("edge-case questionnaire generates, stays consistent and routes correc
 
 test_that("long variable names are shortened safely for Stata", {
   out <- tempfile()
-  expect_warning(suso_mock(fx, design = suso_design(n_psu = 1, ssu_per_psu = 2), out_dir = out, seed = 1, verbose = FALSE),
-                 "32 characters")
-  d <- haven::read_dta(file.path(out, "edge_STATA_All", "edge.dta"))
+  expect_warning(r <- suso_mock(fx, design = suso_design(n_psu = 1, ssu_per_psu = 2), out_dir = out, seed = 1, zip = FALSE,
+                                verbose = FALSE), "32 characters")
+  d <- haven::read_dta(file.path(r$export_dir, "edge_1_STATA_All", "edge.dta"))
   expect_true(all(nchar(names(d)) <= 32))
   expect_false(anyDuplicated(names(d)) > 0)
 })

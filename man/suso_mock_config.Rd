@@ -28,6 +28,8 @@ suso_mock_config(
   na_string = "##N/A##",
   null_share = 0.25,
   special_value_rate = 0.03,
+  restart_rate = 0.15,
+  rejection_rate = 0.2,
   pause_rate = 0.3,
   correction_rate = 0.04,
   comment_rate = 0.004
@@ -85,6 +87,12 @@ are left unanswered (times `target_prob`), so null branches get covered.}
 
 \item{special_value_rate}{Share of numeric answers drawn from the question's special
 values (e.g. -98 "Don't know"), when it has any (still subject to validations).}
+
+\item{restart_rate}{Share of interviews the interviewer re-opens after completing
+(`Completed > Paused > Restarted > ... > Completed` in paradata).}
+
+\item{rejection_rate}{Share of interviews rejected once by HQ before their final status
+(`RejectedBySupervisor > ReceivedByInterviewer > ... > Completed`).}
 
 \item{pause_rate, correction_rate, comment_rate}{Paradata realism knobs.}
 }

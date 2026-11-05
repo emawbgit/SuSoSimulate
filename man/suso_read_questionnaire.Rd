@@ -20,7 +20,9 @@ package or HQ export archive), a folder, or a questionnaire PDF (experimental).}
 \item{verbose}{Print progress.}
 }
 \value{
-Object of class `suso_questionnaire`.
+Object of class `suso_questionnaire`. When the input is an HQ export
+  (`<Q>_<version>_<FORMAT>_All.zip` or its folder), the questionnaire version
+  is detected from `export__info.json` or the archive name (`$hq_version`).
 }
 \description{
 Read a Survey Solutions questionnaire

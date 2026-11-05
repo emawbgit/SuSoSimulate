@@ -161,9 +161,10 @@ res <- suso_mock(
   demo,
   design = suso_design(n_psu = 4, ssu_per_psu = 6,
                        strata_var = "region", psu_var = "ea_id", ssu_var = "hh_id"),
-  out_dir = "mock_demo", seed = 42)
+  out_dir = "mock_demo", seed = 42)   # -> mock_demo/demo_hh_SuSoMock_<timestamp>/
 
-res                           # summary + coverage
+res                           # summary + coverage + export folder
+res$export_dir
 names(res$data)               # "demo_hh" "members" "jobs" "crop_r" "kid_r" "livestock"
 head(res$data$members)
 res$coverage$branches         # TRUE/FALSE counts for each of the 18 conditions
@@ -210,8 +211,9 @@ suso_mock_interactive(answers = list(questionnaire = demo, n_psu = 2, ssu_per_ps
 Download the export of any questionnaire from Headquarters. The Stata format works, and so does any other format, because the questionnaire is always embedded in the archive. Then run:
 
 ```r
-res <- suso_mock("MYSURVEY_1_STATA_All.zip",
+res <- suso_mock("MYSURVEY_18_STATA_All.zip",          # version 18 is read from the name
                  design = suso_design(n_psu = 10, ssu_per_psu = 10), seed = 1)
+# -> ./MYSURVEY_SuSoMock_<timestamp>/MYSURVEY_18_STATA_All.zip, MYSURVEY_18_Paradata_All.zip
 res$coverage$branches[res$coverage$branches$status != "covered", ]
 ```
 
@@ -265,8 +267,12 @@ res <- suso_mock(
     error_rate = 0.02,                           # 2% of validated answers deliberately invalid
     tz_offset = "+03:00",
     status_mix = c("100" = .2, "120" = .3, "130" = .5)),
-  out_dir = "mock_export", seed = 2025, zip = TRUE)
+  out_dir = "D:/mock",                           # parent folder of <Q>_SuSoMock_<timestamp>/
+  version = 18,                                  # HQ questionnaire version in the export names
+  seed = 2025)
 ```
+
+`version` defaults to the version detected in an HQ export input (`export__info.json` or a `<Q>_<v>_..._All` name), otherwise 1.
 
 ---
 
@@ -345,26 +351,38 @@ res <- suso_mock("document.json",
 ## Output
 
 ```
-mock_export/
-├── <qvar>_STATA_All/
-│   ├── <qvar>.dta                  main (household-level) file
-│   ├── <roster>.dta …              one file per roster level
-│   ├── interview__actions.dta
-│   ├── interview__diagnostics.dta
-│   ├── interview__errors.dta
-│   ├── interview__comments.dta
-│   ├── assignment__actions.dta
-│   └── export__readme.txt
-├── <qvar>_Paradata_All/
-│   ├── paradata.tab                UTF-8 with BOM, tab-separated
-│   └── paradata.do                 Stata import + labels
-├── coverage_branches.csv           TRUE/FALSE hits per condition, status, notes
-├── coverage_options.csv            category usage per single/multi-select
-├── sample_frame.csv                stratum / psu / ssu / interviewer ↔ interview__key
-└── mock_config.json                every setting used (reproducibility)
+<out_dir>/<Q>_SuSoMock_<YYYYMMDD_HHMMSS>/
+├── <Q>_<version>_STATA_All.zip        same layout as the HQ download (files at the zip root)
+├── <Q>_<version>_STATA_All/
+│   ├── <Q>.dta                       main file, named after the questionnaire variable
+│   ├── <roster>.dta …                one file per roster level
+│   ├── interview__actions.dta, interview__diagnostics.dta, interview__errors.dta,
+│   │   interview__comments.dta, assignment__actions.dta
+│   ├── export__readme.txt
+│   └── Questionnaire/content.zip     document.json + Categories/, re-readable by suso_read_questionnaire()
+├── <Q>_<version>_Paradata_All.zip
+├── <Q>_<version>_Paradata_All/
+│   ├── export__info.json             QuestionnaireId "<id>$<version>"
+│   ├── export__readme.txt
+│   ├── paradata.tab                  UTF-8 with BOM, CRLF, tab-separated
+│   └── paradata.do                   Stata import + labels
+├── coverage_branches.csv, coverage_options.csv
+├── sample_frame.csv                  stratum / psu / ssu / interviewer <-> interview__key
+└── mock_config.json                  every setting used (reproducibility)
 ```
 
-With `zip = TRUE`, the two folders are also zipped as `<qvar>_STATA_All.zip` and `<qvar>_Paradata_All.zip`.
+`<Q>` is the questionnaire variable name. A second export in the same second gets a `_2` suffix, so nothing is overwritten. `zip = FALSE` skips the archives.
+
+### Paradata
+
+Events follow HQ 24.x: creation block (`InterviewCreated`, `SupervisorAssigned`, `InterviewModeChanged`, `InterviewerAssigned`, `KeyAssigned`, preloaded `AnswerSet`s), `Resumed`/`Paused`, `AnswerSet` (`var||value||rv`; yes/no logged click by click), `AnswerRemoved`, `CommentSet`, and at the final completion the system block `VariableDisabled` > `QuestionDeclaredValid` > `QuestionDeclaredInvalid` > `VariableSet` before `Completed`. `restart_rate` adds `Restarted` cycles and `rejection_rate` supervisor rejections (`RejectedBySupervisor` > `ReceivedByInterviewer` > corrections > `Completed`).
+
+`suso_read_paradata()` reads a real or mock `paradata.tab` (file, folder or zip) and splits `parameters` into `variable`, `value`, `rv` and `rule`:
+
+```r
+p <- suso_read_paradata("CLASS_PH_18_Paradata_All.zip")
+table(p$event)
+```
 
 In R, `suso_mock()` returns a `suso_mock` object:
 
@@ -376,9 +394,10 @@ In R, `suso_mock()` returns a `suso_mock` object:
 | `$coverage` | `$branches`, `$options` and `$summary` |
 | `$frame` | Sampling frame, linked to the interview keys |
 | `$questionnaire` | Parsed questionnaire |
-| `$config`, `$design` | Settings used |
+| `$config`, `$design`, `$version` | Settings used |
+| `$export_dir` | Folder written to |
 
-`write_suso_mock(res, dir)` writes a result again to another folder.
+`write_suso_mock(res, dir, version = 19)` writes a result again, e.g. under another folder or version.
 
 ---
 
@@ -517,7 +536,7 @@ Timestamps are UTC with milliseconds; `tz_offset` uses .NET format (`03:00:00`).
 ## Working with the output in Stata
 
 ```stata
-cd "mock_export/demo_hh_STATA_All"
+cd "mock_demo/demo_hh_SuSoMock_20250301_101500/demo_hh_1_STATA_All"
 
 * household file
 use demo_hh, clear

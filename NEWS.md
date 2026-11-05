@@ -1,3 +1,19 @@
+# SuSoSimulate 0.3.0
+
+## Export layout (breaking)
+* Every run writes `<out_dir>/<Q>_SuSoMock_<YYYYMMDD_HHMMSS>/`; `out_dir` (default `"."`) is now the parent folder.
+* Archives and folders are named as HQ names them: `<Q>_<version>_STATA_All.zip` and `<Q>_<version>_Paradata_All.zip`, with files at the archive root. `zip = TRUE` is now the default.
+* `suso_mock(version = )` and `write_suso_mock(version = )` set the questionnaire version. Default: detected from an HQ export input (`export__info.json` or the file name), otherwise 1.
+* The STATA export carries `Questionnaire/content.zip` (document.json + categories) and an HQ-style `export__readme.txt`; the paradata export carries `export__info.json`.
+
+## Paradata
+* Aligned with the real HQ 24.x paradata: progressive yes/no `AnswerSet`s, `AnswerRemoved`, `VariableDisabled`, system block (`VariableDisabled` > `QuestionDeclaredValid` > `QuestionDeclaredInvalid` > `VariableSet`) only at the final completion, `Restarted` and supervisor-rejection cycles with HQ roles and time-zone offsets. Pauses no longer precede the interview creation.
+* New `suso_mock_config(restart_rate, rejection_rate)`.
+* New `suso_read_paradata()`: reads real or mock paradata and parses `parameters`.
+
+## App and wizard
+* Questionnaire version input (pre-filled from the uploaded export), "save to folder", and downloads named `<Q>_SuSoMock_<timestamp>.zip`.
+
 # SuSoSimulate 0.2.0
 
 ## New

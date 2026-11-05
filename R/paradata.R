@@ -4,12 +4,17 @@
 # assignment__actions), all derived from the same event stream so they are
 # mutually consistent.
 #
-# Format (SuSo 24.x): interview__id, order, event, responsible, role,
-# timestamp_utc (YYYY-MM-DDThh:mm:ss.mmm), tz_offset (hh:mm:ss), parameters.
-# AnswerSet: var||value||rv  (rv "1,3"; multi "1, 2"; yes/no "yes|no";
-# text list "a|b"; GPS "lat,lon[acc]alt"; timestamps "YYYY-MM-DD hh:mm:ss").
-# QuestionDeclaredValid / Invalid / VariableSet are emitted by the system
-# (blank responsible, role 0) at completion, as in real exports.
+# Format (SuSo 24.x, checked against real CLASS_PH v17/v18 paradata):
+#   interview__id, order, event, responsible, role, timestamp_utc
+#   (YYYY-MM-DDThh:mm:ss.mmm), tz_offset (hh:mm:ss; 00:00:00 for server events),
+#   parameters.
+# AnswerSet: var||value||rv  (rv "1,3"; multi "1, 2"; yes/no "yes|no" logged per
+#   click; linked multi "1|2"; text list "a|b"; GPS "lat,lon[acc]alt";
+#   timestamps "YYYY-MM-DD hh:mm:ss"). AnswerRemoved: var||rv.
+# Final completion is preceded (same timestamp) by the system block
+#   VariableDisabled > QuestionDeclaredValid > QuestionDeclaredInvalid > VariableSet.
+# Cycles: Completed > Paused > Restarted > Resumed > ... > Completed, and
+#   ReceivedBySupervisor > RejectedBySupervisor > ReceivedByInterviewer > Resumed > ...
 # ---------------------------------------------------------------------------
 
 .role_labels <- c("<UNKNOWN ROLE>" = 0, Interviewer = 1, Supervisor = 2, Headquarter = 3,
@@ -56,7 +61,7 @@ is_preloaded <- function(nd, e) e$kind == "answer" && ((isTRUE(nd$featured) && !
 
 build_paradata <- function(qn, states, meta, cfg, design) {
   off <- parse_offset(cfg$tz_offset); tzs <- fmt_offset(off)
-  hq <- "headquarters"
+  hq <- "headquarters"; srv <- "00:00:00"            # server-side events carry tz 00:00:00
   ev_all <- vector("list", length(states))
   comments <- list()
   for (i in seq_along(states)) {
@@ -67,73 +72,119 @@ build_paradata <- function(qn, states, meta, cfg, design) {
       E$event <<- c(E$event, event); E$resp <<- c(E$resp, resp); E$role <<- c(E$role, role)
       E$t <<- c(E$t, as.numeric(t)); E$tz <<- c(E$tz, tz); E$par <<- c(E$par, par)
     }
+    val <- function(nd, rv) env_get(st$vals, st_key(nd$varname, rv))
+    pset <- function(nd, rv, v, t) add("AnswerSet", int, 1L, t, paste0(nd$varname, "||", para_value(nd, v), "||", rv_str(rv)))
+    # one answer as the tablet logs it; yes/no questions log every click ("yes|no" accumulating)
+    answer <- function(nd, rv, v, t) {
+      if (!inherits(v, "sus_yesno")) return(pset(nd, rv, v, t))
+      clicks <- nd$options$code[nd$options$code %in% c(v$yes, v$no)]
+      k <- length(clicks)
+      for (j in seq_len(k)) {
+        done <- clicks[seq_len(j)]
+        pset(nd, rv, sus_yesno(v$yes[v$yes %in% done], v$no[v$no %in% done], v$all), t - (k - j) * stats::runif(1, 1, 4))
+      }
+    }
+    log <- log_items(st$alog)
+    answers <- Filter(function(e) e$kind == "answer" && !is_preloaded(qn$nodes[[e$id]], e), log)
+    # re-open: the interviewer revisits a few answers
+    redo <- function(t) {
+      for (e in pick(answers, stats::rgeom(1, 0.5))) {
+        t <- t + answer_seconds(qn$nodes[[e$id]])
+        answer(qn$nodes[[e$id]], e$rv, val(qn$nodes[[e$id]], e$rv), t)
+      }
+      t
+    }
+    # system re-evaluation emitted with the final completion, in HQ order:
+    # VariableDisabled > QuestionDeclaredValid > QuestionDeclaredInvalid > VariableSet
+    errs <- log_items(st$errors)
+    err_keys <- vapply(errs, function(x) paste0(x$id, "|", rv_str(x$rv)), "")
+    system_block <- function(t) {
+      for (e in log_items(st$vdis)) add("VariableDisabled", "", 0L, t, paste0(qn$nodes[[e$id]]$varname, "||", rv_str(e$rv)))
+      inv <- character()
+      for (e in answers) {
+        nd <- qn$nodes[[e$id]]; k <- paste0(nd$id, "|", rv_str(e$rv))
+        if (k %in% err_keys) for (x in errs[err_keys == k]) inv <- c(inv, paste0(nd$varname, "||", rv_str(e$rv), "||", x$index - 1))
+        else add("QuestionDeclaredValid", "", 0L, t, paste0(nd$varname, "||", rv_str(e$rv)))
+      }
+      for (p in inv) add("QuestionDeclaredInvalid", "", 0L, t, p)
+      for (e in log) if (e$kind == "variable") {
+        nd <- qn$nodes[[e$id]]; v <- val(nd, e$rv)
+        if (!is_na1(v)) add("VariableSet", "", 0L, t, paste0(nd$varname, "||", para_value(nd, v), "||", rv_str(e$rv)))
+      }
+    }
+    complete <- function(t, final) {
+      if (final) system_block(t)
+      add("Completed", int, 1L, t, pick(c("", "ok", "done")))
+      add("Paused", int, 1L, t)
+    }
+
+    # creation, preload, interview
     t0 <- u$start_time; tc <- t0 - stats::runif(1, 5, 90)
     add("InterviewCreated", int, 1L, tc)
     add("SupervisorAssigned", int, 1L, tc)
     add("InterviewModeChanged", int, 1L, tc, "CAPI||")
     add("InterviewerAssigned", int, 1L, tc, int)
     add("KeyAssigned", "", 0L, tc, meta$key[i])
-    log <- log_items(st$alog)
-    first_answer <- NA_real_
-    # preloaded identifying answers at creation time
     for (e in log) {
       nd <- qn$nodes[[e$id]]
-      if (is_preloaded(nd, e)) {
-        add("AnswerSet", int, 1L, tc, paste0(nd$varname, "||", para_value(nd, env_get(st$vals, st_key(nd$varname, e$rv))), "||", rv_str(e$rv)))
-      }
+      if (is_preloaded(nd, e)) pset(nd, e$rv, val(nd, e$rv), tc)
     }
     add("Resumed", int, 1L, t0, "Tablet")
-    paused <- FALSE
-    for (e in log) {
-      nd <- qn$nodes[[e$id]]
-      if (e$kind != "answer" || is_preloaded(nd, e)) next
-      v <- env_get(st$vals, st_key(nd$varname, e$rv))
-      rvs <- rv_str(e$rv)
-      if (stats::runif(1) < cfg$pause_rate / 25) {
-        add("Paused", int, 1L, e$t - stats::runif(1, 300, 1800)); add("Resumed", int, 1L, e$t - 1, "Tablet")
+    prev <- t0
+    for (e in answers) {
+      nd <- qn$nodes[[e$id]]; v <- val(nd, e$rv); rvs <- rv_str(e$rv)
+      if (e$t - prev > 20 && stats::runif(1) < cfg$pause_rate / 25) {   # pause inside the gap since the last answer
+        add("Paused", int, 1L, prev + 1); add("Resumed", int, 1L, e$t - 10, "Tablet")
       }
-      if (stats::runif(1) < cfg$correction_rate) {
+      prev <- e$t
+      if (stats::runif(1) < cfg$correction_rate) {           # a wrong answer, then removed or overwritten
         a <- alt_value(nd, v)
-        if (!is.null(a)) add("AnswerSet", int, 1L, e$t - stats::runif(1, 2, 6), paste0(nd$varname, "||", para_value(nd, a), "||", rvs))
+        if (!is.null(a)) pset(nd, e$rv, a, e$t - stats::runif(1, 4, 8))
+        if (is.null(a) || stats::runif(1) < 0.5) add("AnswerRemoved", int, 1L, e$t - stats::runif(1, 1, 3), paste0(nd$varname, "||", rvs))
       }
-      add("AnswerSet", int, 1L, e$t, paste0(nd$varname, "||", para_value(nd, v), "||", rvs))
-      if (is.na(first_answer)) first_answer <- e$t
+      answer(nd, e$rv, v, e$t)
       if (stats::runif(1) < cfg$comment_rate) {
-        txt <- sample(c("respondent not sure", "value confirmed with respondent", "estimated by respondent", "see notes"), 1)
+        txt <- pick(c("respondent not sure", "value confirmed with respondent", "estimated by respondent", "see notes"))
         add("CommentSet", int, 1L, e$t + 2, paste0(nd$varname, "||", txt, if (nzchar(rvs)) paste0("||", rvs) else ""))
         comments[[length(comments) + 1]] <- list(i = i, node = nd, rv = e$rv, t = e$t + 2, who = int, role = 1L, txt = txt)
       }
     }
-    tend <- st$end_time + stats::runif(1, 10, 60)
-    errs <- log_items(st$errors)
-    err_keys <- vapply(errs, function(x) paste0(x$id, "|", rv_str(x$rv)), "")
-    for (e in log) {
-      nd <- qn$nodes[[e$id]]
-      v <- env_get(st$vals, st_key(nd$varname, e$rv))
-      if (e$kind == "variable") { if (!is_na1(v)) add("VariableSet", "", 0L, tend, paste0(nd$varname, "||", para_value(nd, v), "||", rv_str(e$rv))); next }
-      k <- paste0(nd$id, "|", rv_str(e$rv))
-      if (k %in% err_keys) {
-        for (x in errs[err_keys == k]) add("QuestionDeclaredInvalid", "", 0L, tend, paste0(nd$varname, "||", rv_str(e$rv), "||", x$index - 1))
-      } else add("QuestionDeclaredValid", "", 0L, tend, paste0(nd$varname, "||", rv_str(e$rv)))
+
+    # completion, optional re-open (Restarted) and HQ rejection cycle, final status
+    s <- meta$status[i]
+    reject <- s != 65 && stats::runif(1) < cfg$rejection_rate
+    t <- st$end_time + stats::runif(1, 10, 60)
+    if (stats::runif(1) < cfg$restart_rate) {
+      complete(t, FALSE)
+      t <- t + stats::runif(1, 60, 1800)
+      add("Restarted", int, 1L, t, tz = srv); add("Resumed", int, 1L, t + 1, "Tablet")
+      t <- redo(t + 2) + stats::runif(1, 10, 60)
     }
-    add("Completed", int, 1L, tend, sample(c("", "ok", "done"), 1))
-    add("Paused", int, 1L, tend)
-    trs <- tend + stats::runif(1, 1800, 6 * 3600)   # sync; server events carry tz 00:00:00
-    add("ReceivedBySupervisor", "", 0L, trs, tz = "00:00:00")
-    s <- meta$status[i]; t <- trs
+    complete(t, !reject)
+    t <- t + stats::runif(1, 1800, 6 * 3600); add("ReceivedBySupervisor", "", 0L, t, tz = srv)
+    if (reject) {
+      t <- t + stats::runif(1, 3600, 36 * 3600)
+      api <- stats::runif(1) < 0.4
+      add("RejectedBySupervisor", if (api) "api_user" else hq, if (api) 5L else 3L, t,
+          "Please review the flagged answers and resubmit", tz = if (api) srv else tzs)
+      t <- t + stats::runif(1, 600, 7200); add("ReceivedByInterviewer", "", 0L, t, tz = srv)
+      t <- t + stats::runif(1, 3600, 24 * 3600); add("Resumed", int, 1L, t, "Tablet")
+      t <- redo(t + 2) + stats::runif(1, 10, 60)
+      complete(t, TRUE)
+      t <- t + stats::runif(1, 1800, 6 * 3600); add("ReceivedBySupervisor", "", 0L, t, tz = srv)
+    }
     if (s %in% c(120, 130, 125)) { t <- t + stats::runif(1, 3600, 36 * 3600); add("ApproveBySupervisor", sup, 2L, t, "ok") }
     if (s == 130) { t <- t + stats::runif(1, 3600, 72 * 3600); add("ApproveByHeadquarter", hq, 3L, t, "") }
     if (s == 125) { t <- t + stats::runif(1, 3600, 72 * 3600); add("RejectedByHeadquarter", hq, 3L, t, "Please review the flagged answers") }
     if (s == 65) { t <- t + stats::runif(1, 3600, 24 * 3600); add("RejectedBySupervisor", sup, 2L, t, "Please verify and resubmit")
-                   add("ReceivedByInterviewer", "", 0L, t + stats::runif(1, 600, 7200), tz = "00:00:00") }
-    # all event times are on the local fieldwork clock; store as UTC
+                   add("ReceivedByInterviewer", "", 0L, t + stats::runif(1, 600, 7200), tz = srv) }
+    # all event times are on the local fieldwork clock; store as UTC (stable order for ties)
     tu <- E$t - off
     o <- order(tu, seq_along(tu))
     ev_all[[i]] <- data.frame(interview__id = meta$id[i], order = seq_along(o), event = E$event[o],
       responsible = E$resp[o], role = E$role[o],
       timestamp_utc = fmt_ts(as.POSIXct(tu[o], origin = "1970-01-01", tz = "UTC"), ms = TRUE),
       tz_offset = E$tz[o], parameters = E$par[o], stringsAsFactors = FALSE)
-    attr(ev_all[[i]], "first_answer") <- first_answer
   }
   list(paradata = do.call(rbind, ev_all), comments = comments, per = ev_all)
 }
@@ -156,6 +207,7 @@ build_system_files <- function(qn, states, meta, para, cfg) {
     for (j in seq_len(nrow(a))) {
       ev <- a$event[j]
       if (ev %in% c("SupervisorAssigned", "Completed", "RejectedByHeadquarter")) { rn[j] <- u$supervisor; rr[j] <- 2L }
+      else if (ev == "Restarted") { rn[j] <- u$interviewer; rr[j] <- 1L }
       else if (ev %in% c("ApproveBySupervisor")) { rn[j] <- "headquarters"; rr[j] <- 3L }
       else if (ev == "ApproveByHeadquarter") { rn[j] <- ""; rr[j] <- NA_integer_ }
       else { rn[j] <- u$interviewer; rr[j] <- 1L }
@@ -176,7 +228,8 @@ build_system_files <- function(qn, states, meta, para, cfg) {
     s <- meta$status[i]
     diag[[i]] <- data.frame(interview__key = meta$key[i], interview__id = meta$id[i], interview__status = s,
       responsible = switch(as.character(s), "65" = u$interviewer, "100" = u$supervisor, "125" = u$supervisor, "headquarters"),
-      interviewers = 1, rejections__sup = as.numeric(s == 65), rejections__hq = as.numeric(s == 125),
+      interviewers = 1, rejections__sup = sum(p$event == "RejectedBySupervisor"),
+      rejections__hq = sum(p$event == "RejectedByHeadquarter"),
       entities__errors = meta$n_errors[i], questions__comments = sum(p$event == "CommentSet"),
       interview__duration = sprintf("%02d.%s", as.integer(active %/% 86400), fmt_hms(active %% 86400)),
       n_questions_unanswered = st$n_unanswered, stringsAsFactors = FALSE)

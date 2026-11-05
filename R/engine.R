@@ -105,7 +105,10 @@ walk_nodes <- function(G, ids, rv) {
   for (id in ids) {
     node <- G$qn$nodes[[id]]
     switch(node$kind,
-      group = if (eval_cond(G, node, rv)) walk_nodes(G, node$children, rv) else clear_children(G, node, rv),
+      group = if (eval_cond(G, node, rv)) walk_nodes(G, node$children, rv) else {
+        clear_children(G, node, rv)
+        if (G$rec) log_disabled_vars(G, node, rv)
+      },
       roster = walk_roster(G, node, rv),
       question = walk_question(G, node, rv),
       variable = walk_variable(G, node, rv),
@@ -146,7 +149,19 @@ walk_roster <- function(G, node, rv) {
         assign(rv_str(rv2), rv2, envir = er)
       }
       walk_nodes(G, node$children, rv2)
-    } else clear_children(G, node, rv2)
+    } else {
+      clear_children(G, node, rv2)
+      if (G$rec) log_disabled_vars(G, node, rv2)
+    }
+  }
+}
+
+# Calculated variables inside a disabled section / roster row -> paradata VariableDisabled
+log_disabled_vars <- function(G, node, rv) {
+  for (id in node$children) {
+    ch <- G$qn$nodes[[id]]
+    if (ch$kind == "variable") log_add(G$st$vdis, list(id = ch$id, rv = rv))
+    else if (ch$kind == "group") log_disabled_vars(G, ch, rv)
   }
 }
 
@@ -253,7 +268,7 @@ generate_interview <- function(qn, cfg, unit, cov, tune = list()) {
   }
   st <- G$st
   st$export_rows <- new.env(); st$hits <- new.env(); st$opt <- new.env()
-  st$errors <- log_new(); st$alog <- log_new(); st$n_unanswered <- 0L
+  st$errors <- log_new(); st$alog <- log_new(); st$vdis <- log_new(); st$n_unanswered <- 0L
   st$clock <- unit$start_time
   st$changed <- FALSE
   G$rec <- TRUE

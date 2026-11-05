@@ -20,7 +20,9 @@
 #' @param pdf_engine `"pdftools"` (default) or `"markitdown"` (needs the
 #'   `markitdown` CLI on PATH) for PDF input.
 #' @param verbose Print progress.
-#' @return Object of class `suso_questionnaire`.
+#' @return Object of class `suso_questionnaire`. When the input is an HQ export
+#'   (`<Q>_<version>_<FORMAT>_All.zip` or its folder), the questionnaire version
+#'   is detected from `export__info.json` or the archive name (`$hq_version`).
 #' @export
 suso_read_questionnaire <- function(path, pdf_engine = c("pdftools", "markitdown"), verbose = TRUE) {
   check_dependencies()
@@ -42,7 +44,24 @@ suso_read_questionnaire <- function(path, pdf_engine = c("pdftools", "markitdown
   }
   sm_msg(verbose, "Reading questionnaire: ", basename(json))
   doc <- jsonlite::fromJSON(json, simplifyVector = FALSE)
-  qn_from_document(doc, cat_dir = cat_dir, verbose = verbose)
+  qn <- qn_from_document(doc, cat_dir = cat_dir, verbose = verbose,
+                         raw_json = readChar(json, file.size(json), useBytes = TRUE))
+  qn$hq_version <- detect_hq_version(path, cat_dir)
+  if (!is.na(qn$hq_version)) sm_msg(verbose, "  questionnaire version: ", qn$hq_version)
+  qn
+}
+
+# HQ questionnaire version: export__info.json ("<id>$<version>"), else the
+# archive/folder name "<Q>_<version>_<FORMAT>_All[.zip]".
+detect_hq_version <- function(path, dir = NULL) {
+  info <- if (!is.null(dir)) list.files(dir, "^export__info\\.json$", recursive = TRUE, full.names = TRUE) else character()
+  if (length(info)) {
+    id <- tryCatch(jsonlite::fromJSON(info[1])$QuestionnaireId, error = function(e) NULL)
+    v <- sub("^.*\\$", "", id %||% "")
+    if (grepl("^[0-9]+$", v)) return(as.integer(v))
+  }
+  m <- regmatches(basename(path), regexec("_([0-9]+)_[A-Za-z]+_All(\\.zip)?$", basename(path)))[[1]]
+  if (length(m)) as.integer(m[2]) else NA_integer_
 }
 
 find_document_json <- function(dir) {
@@ -70,7 +89,7 @@ parse_macros <- function(m) {
 
 # Reusable categories: Categories/<id>.xlsx|.tsv|.txt|.csv inside the package
 load_categories <- function(cats, dir) {
-  out <- list()
+  out <- list(); raw <- list()
   if (!length(cats) || is.null(dir)) return(out)
   files <- list.files(dir, recursive = TRUE, full.names = TRUE)
   for (c in cats) {
@@ -84,6 +103,7 @@ load_categories <- function(cats, dir) {
       else utils::read.delim(f, sep = if (ext == "csv") "," else "\t", stringsAsFactors = FALSE)
     }, error = function(e) NULL)
     if (is.null(df) || !nrow(df)) next
+    raw[[basename(f)]] <- readBin(f, "raw", file.size(f))   # re-exported in Questionnaire/content.zip
     nmz <- tolower(names(df))
     pick <- function(cands) { j <- which(nmz %in% cands); if (length(j)) df[[j[1]]] else NULL }
     out[[tolower(id)]] <- data.frame(
@@ -92,6 +112,7 @@ load_categories <- function(cats, dir) {
       parent = as_num_or_na(pick(c("parentid", "parentvalue", "parent"))) %||% NA_real_,
       stringsAsFactors = FALSE)
   }
+  attr(out, "raw") <- raw
   out
 }
 
@@ -123,13 +144,17 @@ var_type_code <- function(x) {
   switch(tolower(x), longinteger = 1L, double = 2L, boolean = 3L, datetime = 4L, string = 5L, 2L)
 }
 
-qn_from_document <- function(doc, cat_dir = NULL, verbose = TRUE) {
+qn_from_document <- function(doc, cat_dir = NULL, verbose = TRUE, raw_json = NULL) {
   qn <- new.env()
   qn$title   <- doc$Title %||% "questionnaire"
   qn$varname <- doc$VariableName %||% gsub("[^A-Za-z0-9_]", "_", tolower(qn$title))
   qn$id      <- doc$PublicKey %||% doc$Id %||% new_guid()
+  qn$revision <- doc$Revision %||% NA
+  qn$hq_version <- NA_integer_
+  qn$document_json <- raw_json %||% as.character(jsonlite::toJSON(doc, auto_unbox = TRUE, null = "null", digits = NA))
   qn$macros  <- parse_macros(doc$Macros)
   qn$categories <- load_categories(doc$Categories, cat_dir)
+  qn$category_raw <- attr(qn$categories, "raw") %||% list()
   qn$nodes   <- new.env(hash = TRUE)
   qn$by_name <- new.env(hash = TRUE)
   qn$order   <- character()

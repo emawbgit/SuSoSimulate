@@ -19,9 +19,12 @@ test_that("Shiny app: full workflow on the demo questionnaire", {
     expect_equal(output$vb_n, "6")
     z <- output$dl_zip
     files <- zip::zip_list(z)$filename
-    expect_true(any(grepl("demo_hh_STATA_All/demo_hh.dta$", files)))
+    expect_true(any(grepl("^demo_hh_SuSoMock_\\d{8}_\\d{6}/demo_hh_1_STATA_All\\.zip$", files)))
+    expect_true(any(grepl("demo_hh_1_STATA_All/demo_hh.dta$", files)))
     expect_true(any(grepl("paradata.tab$", files)))
     expect_true(any(grepl("reproduce_mock.R$", files)))
+    sd <- tempfile(); session$setInputs(save_dir = sd, version = 7, save_btn = 1)
+    expect_true(file.exists(file.path(rv$saved, "demo_hh_7_Paradata_All.zip")))
     p <- jsonlite::fromJSON(output$dl_params)
     expect_equal(p$seed, 3)
     session$setInputs(n_psu = 9)
@@ -40,7 +43,7 @@ test_that("template R code produced by the app runs", {
             config = list(item_nonresponse = 0, error_rate = 0, target_prob = 0.5, roster_sizes = list(hhsize = c(1L, 3L)),
                           status_mix = c("100" = 1), tz_offset = "+03:00", coverage_repair = FALSE), seed = 2)
   code <- SuSoSimulate:::app_r_code(s, demo)
-  code <- sub('out_dir = "mock_export"', "out_dir = NULL, verbose = FALSE", code, fixed = TRUE)
+  code <- sub('out_dir = "."', "out_dir = NULL, verbose = FALSE", code, fixed = TRUE)
   env <- new.env()
   eval(parse(text = code), envir = env)
   expect_s3_class(env$res, "suso_mock")

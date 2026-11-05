@@ -8,9 +8,10 @@ suso_mock(
   questionnaire,
   design = suso_design(),
   config = suso_mock_config(),
-  out_dir = "mock_export",
+  out_dir = ".",
+  version = NULL,
   seed = NULL,
-  zip = FALSE,
+  zip = TRUE,
   verbose = TRUE,
   progress = NULL
 )
@@ -23,11 +24,17 @@ or a `suso_questionnaire` object.}
 
 \item{config}{A [suso_mock_config()] object.}
 
-\item{out_dir}{Output folder. `NULL` returns data without writing.}
+\item{out_dir}{Folder in which the export folder `<Questionnaire>_SuSoMock_<timestamp>`
+is created (default: working directory). `NULL` returns data without writing.}
+
+\item{version}{Questionnaire version number used in the export names
+(`<Questionnaire>_<version>_STATA_All`), as HQ numbers each imported version.
+Default: the version detected from an HQ export input, otherwise 1.}
 
 \item{seed}{Random seed for reproducibility.}
 
-\item{zip}{Also write `<questionnaire>_STATA_All.zip` and `<questionnaire>_Paradata_All.zip`.}
+\item{zip}{Write `<Q>_<version>_STATA_All.zip` and `<Q>_<version>_Paradata_All.zip`
+(as downloaded from HQ) next to the unzipped folders.}
 
 \item{verbose}{Print progress.}
 
