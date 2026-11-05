@@ -235,7 +235,7 @@ The app follows the workflow of DIME's [iehfc](https://github.com/dime-worldbank
 | **2. Sample design** | PSUs, interviews per PSU, and the identifying questions that receive the stratum, PSU and household ids. These are pre-guessed from the cover page. Also set field teams, the calendar, the UTC offset and the GPS bounding box. Optionally upload a preload frame (CSV). |
 | **3. Settings** | A min–max slider for each numeric or list roster trigger, bounded by its validation. Also item non-response, validation-error injection, special values, branch-steering strength, coverage repair and budget, final status shares, and the seed. |
 | **4. Generate & review** | One click generates the data, with a progress bar. Value boxes show interviews, branch coverage, option coverage and paradata events. Tabs hold the coverage report (uncovered branches first, with unreachable notes), option coverage, a browser for every export file, the paradata, and the system files. |
-| **5. Export** | Download the full output as a zip: `<qvar>_STATA_All`, `<qvar>_Paradata_All`, coverage reports, sample frame and settings, plus `reproduce_mock.R` and `load_mock.do`. You can also save the settings as JSON and load them back later (or share them with the team), and download the template code: an R script that reproduces the run, and a Stata do-file that loads every file and merges each roster onto its parent. |
+| **5. Export** | Set the questionnaire version (pre-filled from an uploaded HQ export), then download `<Q>_SuSoMock_<timestamp>.zip` or save the same folder to a path on your computer: `<Q>_<version>_STATA_All.zip`, `<Q>_<version>_Paradata_All.zip`, coverage reports, sample frame and settings, plus `reproduce_mock.R` and `load_mock.do`. You can also save the settings as JSON and load them back later (or share them with the team), and download the template code: an R script that reproduces the run, and a Stata do-file that loads every file and merges each roster onto its parent. |
 
 <p align="center">
 <img src="man/figures/app-1_questionnaire.png" width="49%" alt="Questionnaire tab"/>
@@ -329,6 +329,7 @@ res <- suso_mock(
 | `unsupported_p` | 0.5 | TRUE-probability used for conditions the translator cannot run |
 | `na_numeric`, `na_string` | `NA`, `"##N/A##"` | Codes for *enabled but unanswered* values (SuSo 24.x Stata conventions) |
 | `pause_rate`, `correction_rate`, `comment_rate` | 0.3, 0.04, 0.004 | Paradata realism: pauses, answer corrections, comments |
+| `restart_rate`, `rejection_rate` | 0.15, 0.2 | Share of interviews with a `Restarted` cycle / a supervisor rejection before the final status |
 | `max_passes`, `max_tries`, `max_roster_rows` | 5, 25, 200 | Engine limits |
 
 ### Example: custom preload frame and generators
@@ -517,7 +518,9 @@ These reproduce a Survey Solutions 24.x Stata export.
 | `Resumed` / `Paused` | interviewer / 1 | `Tablet` / – |
 | `AnswerSet` | interviewer / 1 | `var\|\|value\|\|rv`. rv `1,3`; multi `1, 2`; yes/no `1, 2\|3`; list `a\|b`; GPS `lat,lon[acc]alt`; timestamp `YYYY-MM-DD hh:mm:ss` |
 | `CommentSet` | interviewer / 1 | `var\|\|comment[\|\|rv]` |
-| `VariableSet`, `QuestionDeclaredValid`, `QuestionDeclaredInvalid` | blank / 0, at completion | `var\|\|value\|\|rv`, `var\|\|rv`, `var\|\|rv\|\|validation index` |
+| `AnswerRemoved` | interviewer / 1 | `var\|\|rv` |
+| `VariableDisabled`, `QuestionDeclaredValid`, `QuestionDeclaredInvalid`, `VariableSet` | blank / 0, at the final completion, in this order | `var\|\|rv`, `var\|\|rv`, `var\|\|rv\|\|validation index`, `var\|\|value\|\|rv` |
+| `Restarted` | interviewer / 1, tz `00:00:00` | – |
 | `Completed` | interviewer / 1 | comment |
 | `ReceivedBySupervisor`, `ReceivedByInterviewer` | blank / 0, tz `00:00:00` | – |
 | `ApproveBySupervisor`, `ApproveByHeadquarter`, `RejectedBySupervisor`, `RejectedByHeadquarter` | supervisor / 2, headquarters / 3 | comment |
@@ -553,7 +556,7 @@ use jobs, clear
 merge m:1 interview__key members__id using members, keepusing(age sex) assert(match) nogen
 
 * paradata
-cd "../demo_hh_Paradata_All"
+cd "../demo_hh_1_Paradata_All"
 do paradata.do
 keep if event == "AnswerSet"
 ```
@@ -579,7 +582,7 @@ The test also translated every one of the questionnaire's 237 enabling condition
 ## Limitations
 
 - **Lookup tables.** `table[row].col` and `LinkedFilterExpression` with `@current` are not translated. They fall back to a random draw and are flagged in `$coverage$branches$issue`.
-- **Unverified formats.** No sample was available to verify the paradata value format of yes/no and linked-multi answers, or the export layout of single-selects linked to *nested* rosters. Please open an issue with an example if they differ.
+- **Unverified formats.** The export layout of single-selects linked to *nested* rosters has not been checked against a real export. Please open an issue with an example if it differs.
 - **Numeric special values** are generated only when the validations accept them.
 - **Speed.** About 0.1 s per interview on simple questionnaires and about 1.5 s on heavy ones: 57-row fixed rosters with nested LINQ conditions are evaluated many times per pass. Coverage repair adds candidate interviews (`repair_budget`).
 - **PDF input** is heuristic. Always prefer `document.json`.
