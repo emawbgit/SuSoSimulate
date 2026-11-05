@@ -1,3 +1,31 @@
+# SuSoSimulate 0.5.0
+
+## Export
+* Export folder named after the format instead of a timestamp: `<Q>_<version>_SuSoMock_STATA` or `<Q>_<version>_SuSoMock_Tabular` (also the app download). An existing folder is never overwritten (`_2`, `_3`, ...). `write_suso_mock()` loses its `timestamp` argument.
+* Readme, `.do` and template files are written as UTF-8 with LF, as HQ does, whatever the session encoding; CSV reports as UTF-8.
+
+## Checked against the Survey Solutions documentation
+* Geography answers: `suso_mock_config(geo_format = "geometry_string" | "wkt" | "geojson")`; WKT/GeoJSON polygons are closed; `.Area` / `.Length` are null for geometry types they do not apply to.
+* GPS `__Timestamp` values are UTC (timestamp questions stay in device time).
+* DateTime calculated variables appear in paradata as `M/D/YYYY h:mm:ss AM|PM`.
+* `assignments.tab` has no `assignment__id` column, so it can be uploaded to HQ as is.
+
+## Languages and special characters
+* New sanitising layer (`R/text.R`): every input string (questionnaire JSON, category files, frames, settings, GeoJSON, wizard answers, user generators) is valid UTF-8; Latin-1 / Windows-1252 files (e.g. CSV saved by Excel) are converted, control characters dropped. Tables, labels and paradata are checked again before writing.
+* Keyword heuristics (phone, code, place, name, age, year, money, counts, interviewer question) work on accent-folded text in English, French, Spanish and Portuguese.
+* Text answers use names, places and words in the questionnaire's language (English, French or Spanish, detected).
+* ASCII-safe file names and interviewer logins (`José Peña` -> `JosePena`); numbers always use `.` whatever `options(OutDec)`; readme dates in English whatever `LC_TIME`.
+* An output folder the session's locale cannot represent is reported before generation, with the cause.
+* A failing user generator leaves the answer unanswered instead of stopping the run.
+* New French/Spanish test fixture; the test suite passes in UTF-8 and C locales.
+
+## Progress
+* Console and app show elapsed time and an estimate of the time left during generation, and the most time left during coverage repair.
+
+## Other
+* No bslib deprecation warning: `page_navbar()` uses `navbar_options()` on bslib >= 0.9.
+* License changed to MIT. `citation("SuSoSimulate")`.
+
 # SuSoSimulate 0.4.0
 
 ## Export

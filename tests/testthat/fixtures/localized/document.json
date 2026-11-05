@@ -1,0 +1,717 @@
+{
+ "Id": "d0000000000000000000000000000001",
+ "Title": "Enquête « Ménages » – Côte d’Ivoire / ¿Encuesta de hogares? ¡Sí! (Ñandú, Ærø, Łódź, 北京)",
+ "VariableName": "enquete_menages",
+ "Macros": {
+  "m1": {
+   "Name": "isAdult",
+   "Content": "age >= 15",
+   "Description": "Adulte (≥ 15 ans) / Adulto"
+  }
+ },
+ "Children": [
+  {
+   "$type": "Group",
+   "PublicKey": "a0000000000000000000000000000001",
+   "Title": "Page de garde",
+   "VariableName": "cover",
+   "IsRoster": false,
+   "ConditionExpression": "",
+   "Children": [
+    {
+     "$type": "SingleQuestion",
+     "PublicKey": "b0000000000000000000000000000001",
+     "QuestionType": 0,
+     "VariableName": "region",
+     "QuestionText": "Région / Región d'enquête",
+     "Featured": true,
+     "QuestionScope": 0,
+     "Answers": [
+      {
+       "AnswerText": "Nord – Savanes",
+       "AnswerValue": "1"
+      },
+      {
+       "AnswerText": "Centre (Bouaké)",
+       "AnswerValue": "2"
+      },
+      {
+       "AnswerText": "Sud-Comoé « côtier »",
+       "AnswerValue": "3"
+      }
+     ],
+     "VariableLabel": "Région"
+    },
+    {
+     "$type": "SingleQuestion",
+     "PublicKey": "b0000000000000000000000000000002",
+     "QuestionType": 0,
+     "VariableName": "district",
+     "QuestionText": "Département — Distrito",
+     "Featured": true,
+     "CascadeFromQuestionId": "b0000000000000000000000000000001",
+     "Answers": [
+      {
+       "AnswerText": "Korhogo",
+       "AnswerValue": "11",
+       "ParentValue": "1"
+      },
+      {
+       "AnswerText": "Ferkessédougou",
+       "AnswerValue": "12",
+       "ParentValue": "1"
+      },
+      {
+       "AnswerText": "Bouaké",
+       "AnswerValue": "21",
+       "ParentValue": "2"
+      },
+      {
+       "AnswerText": "Béoumi",
+       "AnswerValue": "22",
+       "ParentValue": "2"
+      },
+      {
+       "AnswerText": "South A",
+       "AnswerValue": "31",
+       "ParentValue": "3"
+      },
+      {
+       "AnswerText": "South B",
+       "AnswerValue": "32",
+       "ParentValue": "3"
+      }
+     ],
+     "VariableLabel": "Département"
+    },
+    {
+     "$type": "NumericQuestion",
+     "PublicKey": "b0000000000000000000000000000003",
+     "QuestionType": 4,
+     "VariableName": "ea_id",
+     "QuestionText": "Zone de dénombrement (ZD) n°",
+     "Featured": true,
+     "IsInteger": true
+    },
+    {
+     "$type": "NumericQuestion",
+     "PublicKey": "b0000000000000000000000000000004",
+     "QuestionType": 4,
+     "VariableName": "hh_id",
+     "QuestionText": "Numéro du ménage / Número del hogar",
+     "Featured": true,
+     "IsInteger": true
+    },
+    {
+     "$type": "DateTimeQuestion",
+     "PublicKey": "b0000000000000000000000000000005",
+     "QuestionType": 5,
+     "VariableName": "start_time",
+     "QuestionText": "Start time",
+     "IsTimestamp": true
+    },
+    {
+     "$type": "TextQuestion",
+     "PublicKey": "bbbbbbbb-0000-0000-0000-0000000000a1",
+     "VariableName": "commune",
+     "QuestionText": "Commune / Municipio (p. ex. « Abobo-Gare »)",
+     "QuestionType": 7,
+     "ConditionExpression": "",
+     "ValidationConditions": [
+      {
+       "Expression": "self != \"Médecin\" || commune.Length > 0",
+       "Message": "Vérifiez la commune ¡ojo!",
+       "Severity": 0
+      }
+     ],
+     "Answers": []
+    },
+    {
+     "$type": "SingleQuestion",
+     "PublicKey": "bbbbbbbb-0000-0000-0000-0000000000a2",
+     "VariableName": "langue",
+     "QuestionText": "Langue de l’entretien",
+     "QuestionType": 0,
+     "ConditionExpression": "commune != \"Yopougon-Attié\"",
+     "CategoriesId": "cccccccc-0000-0000-0000-0000000000c1",
+     "Answers": [],
+     "ValidationConditions": []
+    },
+    {
+     "$type": "SingleQuestion",
+     "PublicKey": "bbbbbbbb-0000-0000-0000-0000000000a3",
+     "VariableName": "enqueteur",
+     "QuestionText": "Nom de l’enquêteur",
+     "QuestionType": 0,
+     "ConditionExpression": "",
+     "ValidationConditions": [],
+     "Answers": [
+      {
+       "AnswerValue": "1",
+       "AnswerText": "José Peña"
+      },
+      {
+       "AnswerValue": "2",
+       "AnswerText": "François Kouassi"
+      },
+      {
+       "AnswerValue": "3",
+       "AnswerText": "Aïcha Traoré"
+      },
+      {
+       "AnswerValue": "4",
+       "AnswerText": "Begoña Núñez"
+      },
+      {
+       "AnswerValue": "5",
+       "AnswerText": "Chloé N’Guessan"
+      }
+     ]
+    },
+    {
+     "$type": "SingleQuestion",
+     "PublicKey": "b0000000000000000000000000000006",
+     "QuestionType": 0,
+     "VariableName": "consent",
+     "QuestionText": "Le ménage accepte-t-il l’entretien ? ¿Acepta el hogar?",
+     "Answers": [
+      {
+       "AnswerText": "Oui / Sí",
+       "AnswerValue": "1"
+      },
+      {
+       "AnswerText": "Non / No",
+       "AnswerValue": "2"
+      }
+     ]
+    },
+    {
+     "$type": "TextQuestion",
+     "PublicKey": "b0000000000000000000000000000007",
+     "QuestionType": 7,
+     "VariableName": "refusal_reason",
+     "QuestionText": "Raison du refus « précisez »",
+     "ConditionExpression": "consent == 2"
+    },
+    {
+     "$type": "GpsCoordinateQuestion",
+     "PublicKey": "b0000000000000000000000000000008",
+     "QuestionType": 6,
+     "VariableName": "hh_gps",
+     "QuestionText": "Dwelling location",
+     "ConditionExpression": "consent == 1"
+    }
+   ]
+  },
+  {
+   "$type": "Group",
+   "PublicKey": "a0000000000000000000000000000002",
+   "Title": "Household – é",
+   "VariableName": "",
+   "IsRoster": false,
+   "ConditionExpression": "consent == 1",
+   "Children": [
+    {
+     "$type": "NumericQuestion",
+     "PublicKey": "c0000000000000000000000000000001",
+     "QuestionType": 4,
+     "VariableName": "hhsize",
+     "QuestionText": "Combien de personnes vivent dans ce ménage ? ¿Cuántas personas?",
+     "IsInteger": true,
+     "ValidationConditions": [
+      {
+       "Expression": "self.InRange(1, 15)",
+       "Message": "1-15",
+       "Severity": 0
+      }
+     ]
+    },
+    {
+     "$type": "Group",
+     "PublicKey": "c0000000000000000000000000000002",
+     "Title": "Members – é",
+     "VariableName": "members",
+     "IsRoster": true,
+     "RosterSizeSource": 0,
+     "RosterSizeQuestionId": "c0000000000000000000000000000001",
+     "ConditionExpression": "",
+     "Children": [
+      {
+       "$type": "TextQuestion",
+       "PublicKey": "c1000000000000000000000000000001",
+       "QuestionType": 7,
+       "VariableName": "name",
+       "QuestionText": "Nom et prénom du membre (Nombre y apellido)"
+      },
+      {
+       "$type": "SingleQuestion",
+       "PublicKey": "c1000000000000000000000000000002",
+       "QuestionType": 0,
+       "VariableName": "sex",
+       "QuestionText": "Sexe de %name% — Sexo de %name%",
+       "Answers": [
+        {
+         "AnswerText": "Masculin",
+         "AnswerValue": "1"
+        },
+        {
+         "AnswerText": "Féminin",
+         "AnswerValue": "2"
+        }
+       ]
+      },
+      {
+       "$type": "NumericQuestion",
+       "PublicKey": "c1000000000000000000000000000003",
+       "QuestionType": 4,
+       "VariableName": "age",
+       "QuestionText": "Âge en années révolues / Edad en años cumplidos",
+       "IsInteger": true,
+       "ValidationConditions": [
+        {
+         "Expression": "self.InRange(0, 100)",
+         "Message": "0-100",
+         "Severity": 0
+        }
+       ]
+      },
+      {
+       "$type": "SingleQuestion",
+       "PublicKey": "c1000000000000000000000000000004",
+       "QuestionType": 0,
+       "VariableName": "relation",
+       "QuestionText": "Lien de parenté avec le chef de ménage",
+       "Answers": [
+        {
+         "AnswerText": "Chef de ménage",
+         "AnswerValue": "1"
+        },
+        {
+         "AnswerText": "Conjoint(e) / Cónyuge",
+         "AnswerValue": "2"
+        },
+        {
+         "AnswerText": "Enfant / Niño(a)",
+         "AnswerValue": "3"
+        },
+        {
+         "AnswerText": "Autre — ¿Otro?",
+         "AnswerValue": "4"
+        }
+       ],
+       "ValidationConditions": [
+        {
+         "Expression": "(@rowcode == 1) == (relation == 1)",
+         "Message": "Member 1 must be the head",
+         "Severity": 0
+        }
+       ]
+      },
+      {
+       "$type": "SingleQuestion",
+       "PublicKey": "c1000000000000000000000000000005",
+       "QuestionType": 0,
+       "VariableName": "school",
+       "QuestionText": "Fréquente actuellement l’école ? ¿Asiste a la escuela?",
+       "ConditionExpression": "age >= 5 && age <= 24",
+       "Answers": [
+        {
+         "AnswerText": "Oui",
+         "AnswerValue": "1"
+        },
+        {
+         "AnswerText": "Non",
+         "AnswerValue": "2"
+        }
+       ]
+      },
+      {
+       "$type": "NumericQuestion",
+       "PublicKey": "c1000000000000000000000000000006",
+       "QuestionType": 4,
+       "VariableName": "grade",
+       "QuestionText": "Classe actuelle (année)",
+       "IsInteger": true,
+       "ConditionExpression": "school == 1",
+       "ValidationConditions": [
+        {
+         "Expression": "self.InRange(1, 13) && self <= age - 4",
+         "Message": "Grade too high for age",
+         "Severity": 0
+        }
+       ]
+      },
+      {
+       "$type": "MultyOptionsQuestion",
+       "PublicKey": "c1000000000000000000000000000007",
+       "QuestionType": 3,
+       "VariableName": "work",
+       "QuestionText": "Activités des 7 derniers jours : agriculture, salariat… ¿Qué actividades realizó en los últimos 7 días? Ça inclut l’élevage, la pêche & le commerce <détail>",
+       "ConditionExpression": "$isAdult",
+       "Answers": [
+        {
+         "AnswerText": "Agriculture & élevage",
+         "AnswerValue": "1"
+        },
+        {
+         "AnswerText": "Travail salarié \"formel\"",
+         "AnswerValue": "2"
+        },
+        {
+         "AnswerText": "Entreprise propre (« informelle »)",
+         "AnswerValue": "3"
+        },
+        {
+         "AnswerText": "Autre (précisez) 🌽",
+         "AnswerValue": "-98"
+        }
+       ]
+      },
+      {
+       "$type": "TextQuestion",
+       "PublicKey": "c1000000000000000000000000000008",
+       "QuestionType": 7,
+       "VariableName": "work_oth",
+       "QuestionText": "Specify other activity",
+       "ConditionExpression": "work.Contains(-98)"
+      },
+      {
+       "$type": "Group",
+       "PublicKey": "c1000000000000000000000000000009",
+       "Title": "Jobs – é",
+       "VariableName": "jobs",
+       "IsRoster": true,
+       "RosterSizeSource": 0,
+       "RosterSizeQuestionId": "c1000000000000000000000000000007",
+       "Children": [
+        {
+         "$type": "NumericQuestion",
+         "PublicKey": "c2000000000000000000000000000001",
+         "QuestionType": 4,
+         "VariableName": "job_hours",
+         "QuestionText": "Hours worked",
+         "IsInteger": true,
+         "ValidationConditions": [
+          {
+           "Expression": "self.InRange(1, 80)",
+           "Message": "1-80",
+           "Severity": 0
+          }
+         ]
+        },
+        {
+         "$type": "NumericQuestion",
+         "PublicKey": "c2000000000000000000000000000002",
+         "QuestionType": 4,
+         "VariableName": "job_wage",
+         "QuestionText": "Weekly wage",
+         "IsInteger": false,
+         "CountOfDecimalPlaces": 2,
+         "ConditionExpression": "@rowcode == 2"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "$type": "Variable",
+     "PublicKey": "c0000000000000000000000000000003",
+     "Name": "n_adults",
+     "Expression": "members.Count(x => x.age >= 18)",
+     "Type": 1,
+     "Label": "Number of adults"
+    },
+    {
+     "$type": "SingleQuestion",
+     "PublicKey": "c0000000000000000000000000000004",
+     "QuestionType": 0,
+     "VariableName": "respondent",
+     "QuestionText": "Who is answering?",
+     "ConditionExpression": "hhsize > 1",
+     "LinkedToQuestionId": "c1000000000000000000000000000001"
+    },
+    {
+     "$type": "SingleQuestion",
+     "PublicKey": "c0000000000000000000000000000005",
+     "QuestionType": 0,
+     "VariableName": "couple",
+     "QuestionText": "Is there a couple in the household?",
+     "ConditionExpression": "n_adults >= 2",
+     "Answers": [
+      {
+       "AnswerText": "Yes",
+       "AnswerValue": "1"
+      },
+      {
+       "AnswerText": "No",
+       "AnswerValue": "2"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "$type": "Group",
+   "PublicKey": "a0000000000000000000000000000003",
+   "Title": "Agriculture and assets – é",
+   "VariableName": "",
+   "IsRoster": false,
+   "ConditionExpression": "consent == 1",
+   "Children": [
+    {
+     "$type": "SingleQuestion",
+     "PublicKey": "d0000000000000000000000000000001",
+     "QuestionType": 0,
+     "VariableName": "has_crops",
+     "QuestionText": "Did the household grow crops?",
+     "Answers": [
+      {
+       "AnswerText": "Yes",
+       "AnswerValue": "1"
+      },
+      {
+       "AnswerText": "No",
+       "AnswerValue": "2"
+      }
+     ]
+    },
+    {
+     "$type": "MultyOptionsQuestion",
+     "PublicKey": "d0000000000000000000000000000002",
+     "QuestionType": 3,
+     "VariableName": "crops",
+     "QuestionText": "Quelles cultures ? ¿Qué cultivos?",
+     "ConditionExpression": "has_crops == 1",
+     "MaxAllowedAnswers": 3,
+     "Answers": [
+      {
+       "AnswerText": "Maïs",
+       "AnswerValue": "1"
+      },
+      {
+       "AnswerText": "Haricot / Frijol",
+       "AnswerValue": "2"
+      },
+      {
+       "AnswerText": "Manioc (yuca)",
+       "AnswerValue": "3"
+      },
+      {
+       "AnswerText": "Riz paddy ß ø",
+       "AnswerValue": "4"
+      }
+     ]
+    },
+    {
+     "$type": "Group",
+     "PublicKey": "d0000000000000000000000000000003",
+     "Title": "Crop details – é",
+     "VariableName": "crop_r",
+     "IsRoster": true,
+     "RosterSizeSource": 0,
+     "RosterSizeQuestionId": "d0000000000000000000000000000002",
+     "Children": [
+      {
+       "$type": "NumericQuestion",
+       "PublicKey": "d1000000000000000000000000000001",
+       "QuestionType": 4,
+       "VariableName": "crop_area",
+       "QuestionText": "Superficie plantée (ha) — Área sembrada",
+       "CountOfDecimalPlaces": 2,
+       "ValidationConditions": [
+        {
+         "Expression": "self > 0 && self <= 20",
+         "Message": "0-20 ha",
+         "Severity": 0
+        }
+       ]
+      },
+      {
+       "$type": "NumericQuestion",
+       "PublicKey": "d1000000000000000000000000000002",
+       "QuestionType": 4,
+       "VariableName": "harvest_kg",
+       "QuestionText": "Récolte (kg) / Cosecha",
+       "IsInteger": true,
+       "ConditionExpression": "crop_area > 1.5"
+      },
+      {
+       "$type": "SingleQuestion",
+       "PublicKey": "d1000000000000000000000000000003",
+       "QuestionType": 0,
+       "VariableName": "sold",
+       "QuestionText": "Any sold?",
+       "ConditionExpression": "harvest_kg > 500",
+       "Answers": [
+        {
+         "AnswerText": "Yes",
+         "AnswerValue": "1"
+        },
+        {
+         "AnswerText": "No",
+         "AnswerValue": "2"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "$type": "MultyOptionsQuestion",
+     "PublicKey": "d0000000000000000000000000000004",
+     "QuestionType": 3,
+     "VariableName": "assets",
+     "QuestionText": "Does the household own...",
+     "YesNoView": true,
+     "Answers": [
+      {
+       "AnswerText": "Radio",
+       "AnswerValue": "1"
+      },
+      {
+       "AnswerText": "TV",
+       "AnswerValue": "2"
+      },
+      {
+       "AnswerText": "Bicycle",
+       "AnswerValue": "3"
+      },
+      {
+       "AnswerText": "Mobile phone",
+       "AnswerValue": "4"
+      }
+     ]
+    },
+    {
+     "$type": "TextQuestion",
+     "PublicKey": "d0000000000000000000000000000005",
+     "QuestionType": 7,
+     "VariableName": "phone",
+     "QuestionText": "Numéro de téléphone / Teléfono celular",
+     "Mask": "07########",
+     "ConditionExpression": "assets.Yes.Contains(4)"
+    },
+    {
+     "$type": "TextListQuestion",
+     "PublicKey": "d0000000000000000000000000000006",
+     "QuestionType": 9,
+     "VariableName": "kids",
+     "QuestionText": "Prénoms des enfants de moins de 5 ans (niños < 5 años)",
+     "MaxAnswerCount": 6,
+     "ConditionExpression": "members.Any(x => x.age < 5)"
+    },
+    {
+     "$type": "Group",
+     "PublicKey": "d0000000000000000000000000000007",
+     "Title": "Child health – é",
+     "VariableName": "kid_r",
+     "IsRoster": true,
+     "RosterSizeSource": 0,
+     "RosterSizeQuestionId": "d0000000000000000000000000000006",
+     "Children": [
+      {
+       "$type": "SingleQuestion",
+       "PublicKey": "d2000000000000000000000000000001",
+       "QuestionType": 0,
+       "VariableName": "vaccinated",
+       "QuestionText": "Vaccination card seen?",
+       "Answers": [
+        {
+         "AnswerText": "Yes",
+         "AnswerValue": "1"
+        },
+        {
+         "AnswerText": "No",
+         "AnswerValue": "2"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "$type": "Group",
+     "PublicKey": "d0000000000000000000000000000008",
+     "Title": "Livestock – é",
+     "VariableName": "livestock",
+     "IsRoster": true,
+     "RosterSizeSource": 1,
+     "FixedRosterTitles": [
+      {
+       "Value": 1,
+       "Title": "Cattle"
+      },
+      {
+       "Value": 2,
+       "Title": "Goats"
+      },
+      {
+       "Value": 3,
+       "Title": "Chickens"
+      }
+     ],
+     "Children": [
+      {
+       "$type": "SingleQuestion",
+       "PublicKey": "d3000000000000000000000000000001",
+       "QuestionType": 0,
+       "VariableName": "owns",
+       "QuestionText": "Owns any?",
+       "Answers": [
+        {
+         "AnswerText": "Yes",
+         "AnswerValue": "1"
+        },
+        {
+         "AnswerText": "No",
+         "AnswerValue": "2"
+        }
+       ]
+      },
+      {
+       "$type": "NumericQuestion",
+       "PublicKey": "d3000000000000000000000000000002",
+       "QuestionType": 4,
+       "VariableName": "n_animals",
+       "QuestionText": "How many?",
+       "IsInteger": true,
+       "ConditionExpression": "owns == 1",
+       "ValidationConditions": [
+        {
+         "Expression": "self.InRange(1, 300)",
+         "Message": "1-300",
+         "Severity": 0
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "$type": "DateTimeQuestion",
+     "PublicKey": "d0000000000000000000000000000009",
+     "QuestionType": 5,
+     "VariableName": "last_visit",
+     "QuestionText": "Date of last extension visit",
+     "ConditionExpression": "has_crops == 1"
+    },
+    {
+     "$type": "TextQuestion",
+     "PublicKey": "d000000000000000000000000000000a",
+     "QuestionType": 7,
+     "VariableName": "sup_note",
+     "QuestionText": "Supervisor note",
+     "QuestionScope": 1
+    },
+    {
+     "$type": "StaticText",
+     "PublicKey": "d000000000000000000000000000000b",
+     "Text": "Thank the respondent."
+    }
+   ]
+  }
+ ],
+ "Categories": [
+  {
+   "Id": "cccccccc-0000-0000-0000-0000000000c1",
+   "Name": "langues"
+  }
+ ]
+}

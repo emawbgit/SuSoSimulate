@@ -30,6 +30,7 @@ suso_mock_config(
   null_share = 0.25,
   special_value_rate = 0.03,
   cover_first = TRUE,
+  geo_format = c("geometry_string", "wkt", "geojson"),
   restart_rate = 0.15,
   rejection_rate = 0.2,
   pause_rate = 0.3,
@@ -97,6 +98,9 @@ values (e.g. -98 "Don't know"), when it has any (still subject to validations).}
 \item{cover_first}{Put the identifying (cover) questions and the interviewer question
 right after `interview__key`/`interview__id` in the main file, in the order of the
 assignment. `FALSE` keeps HQ's document order.}
+
+\item{geo_format}{Export format of geography (area) answers, as set in the HQ workspace
+settings: `"geometry_string"` (`lon,lat;lon,lat;...`), `"wkt"` (HQ's default) or `"geojson"`.}
 
 \item{restart_rate}{Share of interviews the interviewer re-opens after completing
 (`Completed > Paused > Restarted > ... > Completed` in paradata).}

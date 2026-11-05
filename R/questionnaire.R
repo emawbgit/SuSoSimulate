@@ -43,9 +43,11 @@ suso_read_questionnaire <- function(path, pdf_engine = c("pdftools", "markitdown
     } else stop("Unsupported input type: .", ext, call. = FALSE)
   }
   sm_msg(verbose, "Reading questionnaire: ", basename(json))
-  doc <- jsonlite::fromJSON(json, simplifyVector = FALSE)
+  txt <- read_text_utf8(json)
+  doc <- tryCatch(jsonlite::fromJSON(txt, simplifyVector = FALSE),
+                  error = function(e) stop("Could not parse ", basename(json), ": ", conditionMessage(e), call. = FALSE))
   qn <- qn_from_document(doc, cat_dir = cat_dir, verbose = verbose,
-                         raw_json = readChar(json, file.size(json), useBytes = TRUE))
+                         raw_json = txt)
   qn$hq_version <- detect_hq_version(path, cat_dir)
   if (!is.na(qn$hq_version)) sm_msg(verbose, "  questionnaire version: ", qn$hq_version)
   qn
@@ -99,8 +101,8 @@ load_categories <- function(cats, dir) {
     if (!length(hit)) next
     f <- hit[1]; ext <- tolower(tools::file_ext(f))
     df <- tryCatch({
-      if (ext %in% c("xlsx", "xls")) { check_dependencies(xlsx = TRUE); as.data.frame(readxl::read_excel(f, trim_ws = FALSE)) }
-      else utils::read.delim(f, sep = if (ext == "csv") "," else "\t", stringsAsFactors = FALSE)
+      sanitize_df(if (ext %in% c("xlsx", "xls")) { check_dependencies(xlsx = TRUE); as.data.frame(readxl::read_excel(f, trim_ws = FALSE)) }
+      else utils::read.delim(text = read_text_utf8(f), sep = if (ext == "csv") "," else "\t", stringsAsFactors = FALSE, encoding = "UTF-8"))
     }, error = function(e) NULL)
     if (is.null(df) || !nrow(df)) next
     raw[[basename(f)]] <- readBin(f, "raw", file.size(f))   # re-exported in Questionnaire/content.zip
@@ -145,9 +147,10 @@ var_type_code <- function(x) {
 }
 
 qn_from_document <- function(doc, cat_dir = NULL, verbose = TRUE, raw_json = NULL) {
+  doc <- sanitize_list(doc)                         # every string valid UTF-8, control characters dropped
   qn <- new.env()
   qn$title   <- doc$Title %||% "questionnaire"
-  qn$varname <- doc$VariableName %||% gsub("[^A-Za-z0-9_]", "_", tolower(qn$title))
+  qn$varname <- doc$VariableName %||% gsub("[^A-Za-z0-9_]", "_", fold(qn$title))
   qn$id      <- doc$PublicKey %||% doc$Id %||% new_guid()
   qn$revision <- doc$Revision %||% NA
   qn$hq_version <- NA_integer_
@@ -220,6 +223,7 @@ qn_from_document <- function(doc, cat_dir = NULL, verbose = TRUE, raw_json = NUL
         node$text <- it$QuestionText %||% node$varname
         node$var_label <- it$VariableLabel %||% ""
         node$label <- if (nzchar(node$var_label)) node$var_label else node$text
+        node$fold <- fold(paste(node$varname, strip_html(node$text), node$var_label))   # for keyword heuristics
         node$validations <- lapply(it$ValidationConditions %||% list(), function(v)
           list(src = v$Expression %||% "", msg = v$Message %||% "", severity = severity_code(v$Severity)))
         node$options <- options_df(it$Answers)
@@ -257,6 +261,7 @@ qn_from_document <- function(doc, cat_dir = NULL, verbose = TRUE, raw_json = NUL
     ids
   }
   qn$root <- walk(doc$Children %||% list(), "", character())
+  qn$lang <- detect_language(c(qn$title, vapply(qn$order, function(i) strip_html(qn$nodes[[i]]$text %||% ""), "")))
   finalize_questionnaire(qn, verbose)
 }
 

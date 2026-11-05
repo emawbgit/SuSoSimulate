@@ -16,9 +16,9 @@ test_that("export folder, zip names and contents follow the HQ layout", {
   info <- jsonlite::fromJSON(file.path(root, "demo_hh_18_Paradata_All", "export__info.json"))
   expect_match(info$QuestionnaireId, "^[0-9a-f]{32}\\$18$")
   # a second write never overwrites the first
-  r2 <- write_suso_mock(r, out, timestamp = as.POSIXct(sub("^.*_SuSoMock_", "", basename(root)), format = "%Y%m%d_%H%M%S"),
-                        verbose = FALSE)
-  expect_false(identical(r2, root))
+  expect_equal(basename(root), "demo_hh_18_SuSoMock_STATA")
+  r2 <- write_suso_mock(r, out, verbose = FALSE)
+  expect_equal(basename(r2), "demo_hh_18_SuSoMock_STATA_2")
   expect_error(suso_mock(demo, out_dir = NULL, version = 0, verbose = FALSE), "version")
 })
 

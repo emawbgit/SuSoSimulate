@@ -284,7 +284,10 @@ rt_member <- function(obj, name) {
                   Missing = sus_multi(setdiff(obj$all, c(obj$yes, obj$no))), Length = length(obj$yes), unsupported(paste0(".", name, " on yes/no"))))
   }
   if (inherits(obj, "sus_tuple")) return(obj[[name]] %||% unsupported(paste0(".", name, " on list item")))
-  if (inherits(obj, "sus_area")) return(switch(name, Area = obj$area, Length = obj$len, NumberOfPoints = , PointsCount = obj$num,
+  # Area is null unless a polygon, Length null unless a polygon or polyline (as in Designer syntax)
+  if (inherits(obj, "sus_area")) return(switch(name, Area = if ((obj$geom %||% 0L) == 0L) obj$area else NA,
+                                               Length = if ((obj$geom %||% 0L) %in% 0:1) obj$len else NA,
+                                               NumberOfPoints = , PointsCount = obj$num,
                                                RequestedAccuracy = obj$racc, RequestedFrequency = obj$rfrq,
                                                unsupported(paste0(".", name, " on geography answer"))))
   if (inherits(obj, "sus_gps")) {

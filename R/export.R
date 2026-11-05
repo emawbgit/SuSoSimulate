@@ -114,7 +114,7 @@ node_values <- function(qn, node, st, rv, specs, cfg) {
       lapply(oc, function(cd) as.numeric(cd %in% cds))
     },
     gps = list(v$Latitude, v$Longitude, v$Accuracy, v$Altitude, fmt_date_val(v$Timestamp)),
-    area = if (inherits(v, "sus_area")) list(area_string(v), v$area, v$len, v$num, v$racc, v$rfrq) else
+    area = if (inherits(v, "sus_area")) list(area_string(v, cfg$geo_format %||% "geometry_string"), v$area, v$len, v$num, v$racc, v$rfrq) else
       c(list(as.character(v)), rep(list(NA_real_), 5)),
     list = {
       cd <- as.numeric(names(v)); tx <- unname(unclass(v))

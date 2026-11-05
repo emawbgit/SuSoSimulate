@@ -236,7 +236,8 @@ record_question <- function(G, node, rv, key) {
   if (is.null(v) || !answered(v)) { st$n_unanswered <- st$n_unanswered + 1L; return(invisible()) }
   st$clock <- st$clock + answer_seconds(node)
   if (isTRUE(node$is_timestamp)) { v <- st$clock; assign(key, v, envir = st$vals); bump(G, key) }
-  if (node$qtype == "gps") { v$Timestamp <- st$clock; assign(key, v, envir = st$vals); bump(G, key) }
+  if (node$qtype == "gps") {   # GPS timestamps are UTC (the clock and timestamp questions are device time)
+    v$Timestamp <- st$clock - parse_offset(G$cfg$tz_offset); assign(key, v, envir = st$vals); bump(G, key) }
   log_add(st$alog, list(id = node$id, rv = rv, t = st$clock, kind = "answer"))
   if (node$qtype %in% c("single", "multi") && is.null(node$lnk)) {
     cds <- if (inherits(v, "sus_yesno")) v$yes else codes_of(v)
@@ -267,9 +268,9 @@ coerce_preload <- function(node, x) {
   if (node$qtype == "numeric") return(if (node$is_integer) as.integer(x) else as.numeric(x))
   if (node$qtype == "single") return(as.numeric(x))
   if (node$qtype == "multi") return(sus_multi(as.numeric(x)))
-  if (node$qtype == "list") return(sus_textlist(seq_along(x), x))
+  if (node$qtype == "list") return(sus_textlist(seq_along(x), as_utf8(as.character(x))))
   if (node$qtype == "date") return(as.Date(x))
-  as.character(x)
+  as_utf8(as.character(x))
 }
 
 answer_seconds <- function(node) {

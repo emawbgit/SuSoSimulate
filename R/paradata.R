@@ -33,6 +33,11 @@ para_value <- function(node, v) {
   if (node$kind == "variable") {
     if (is_na1(v)) return("")
     if (is.logical(v)) return(if (v) "True" else "False")
+    if (inherits(v, c("POSIXct", "Date"))) {                     # DateTime variables: M/D/YYYY h:mm:ss AM|PM (docs)
+      lt <- as.POSIXlt(v, tz = "UTC"); h <- lt$hour %% 12; if (h == 0) h <- 12
+      return(sprintf("%d/%d/%d %d:%02d:%02d %s", lt$mon + 1, lt$mday, lt$year + 1900, h, lt$min, as.integer(lt$sec),
+                     if (lt$hour < 12) "AM" else "PM"))
+    }
     return(clean(fmt_date_val(if (is.numeric(v)) fmt_num(v) else v)))
   }
   switch(node$qtype,

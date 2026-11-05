@@ -10,9 +10,9 @@ read_boundary <- function(x) {
   }
   if (is.character(x) && length(x) == 1 && !grepl("^\\s*[{\\[]", x)) {
     if (!file.exists(x)) stop("Boundary file not found: ", x, call. = FALSE)
-    x <- paste(readLines(x, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+    x <- read_text_utf8(x)
   }
-  g <- if (is.character(x)) tryCatch(jsonlite::fromJSON(x, simplifyVector = FALSE), error = function(e)
+  g <- if (is.character(x)) tryCatch(jsonlite::fromJSON(as_utf8(x), simplifyVector = FALSE), error = function(e)
     stop("`boundary` is not valid GeoJSON: ", conditionMessage(e), call. = FALSE)) else x
   if (inherits(g, "sus_boundary")) return(g)
   rings <- list()

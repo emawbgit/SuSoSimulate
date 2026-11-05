@@ -27,11 +27,15 @@ With it you can:
 11. [Export conventions](#export-conventions)
 12. [Paradata and system files](#paradata-and-system-files)
 13. [Working with the output in Stata](#working-with-the-output-in-stata)
-14. [Validation against a real export](#validation-against-a-real-export)
-15. [Limitations](#limitations)
-16. [Troubleshooting](#troubleshooting)
-17. [Package structure](#package-structure)
-18. [License](#license)
+14. [Localised questionnaires and special characters](#localised-questionnaires-and-special-characters)
+15. [Validation against a real export](#validation-against-a-real-export)
+16. [Limitations](#limitations)
+17. [Troubleshooting](#troubleshooting)
+18. [Package structure](#package-structure)
+19. [Reporting bugs](#reporting-bugs)
+20. [Citation](#citation)
+21. [Authors](#authors)
+22. [License](#license)
 
 ---
 
@@ -47,7 +51,8 @@ With it you can:
 | **Sampling** | Strata → PSUs → secondary units, preload of identifying questions, interviewer/supervisor teams (logins taken from the questionnaire's enumerator question), fieldwork calendar, PSU GPS centroids inside a survey boundary drawn on OpenStreetMap or loaded from GeoJSON, or a user-supplied frame |
 | **Output** | HQ **Stata** export (`.dta`, `.a` for unanswered) or **Tabular** export (`.tab` + `.do`, `-999999999` / `##N/A##`), with SuSo naming, ordering, labels and missing-value codes; `paradata.tab`; `interview__actions`, `__diagnostics`, `__errors`, `__comments`, `assignment__actions`; the assignments (preload) file; coverage reports; a JSON record of all settings |
 | **Consistency** | `suso_validate_mock()` cross-checks ids, statuses, error and comment counts, assignments, interviewers and paradata across all files |
-| **Interfaces** | Shiny app (point-and-click, iehfc-style workflow), interactive console wizard, and a scriptable API |
+| **Languages** | French, Spanish and other localised questionnaires: accents, cedillas, `¿ ¡`, curly quotes and non-Latin scripts pass through unchanged; Latin-1 / Windows-1252 inputs are converted; text answers follow the questionnaire's language; works in UTF-8 and C locales |
+| **Interfaces** | Shiny app (point-and-click, iehfc-style workflow), interactive console wizard, and a scriptable API; progress with estimated time remaining |
 
 ---
 
@@ -88,7 +93,7 @@ install.packages(".", repos = NULL, type = "source")
 ### Option C — install from a source tarball
 
 ```r
-install.packages("SuSoSimulate_0.4.0.tar.gz", repos = NULL, type = "source")
+install.packages("SuSoSimulate_0.5.0.tar.gz", repos = NULL, type = "source")
 ```
 
 ### Check the installation
@@ -123,7 +128,7 @@ Or from the command line, inside the clone:
 Rscript -e 'testthat::test_local()'
 ```
 
-Expected result: `[ FAIL 0 | WARN 0 | SKIP 0 | PASS 237 ]`. The suite has nine files:
+Expected result: `[ FAIL 0 | WARN 0 | SKIP 1 | PASS 286 ]` (the skipped test runs only in a non-UTF-8 locale). The suite has ten files:
 
 | File | What it checks |
 |---|---|
@@ -132,8 +137,9 @@ Expected result: `[ FAIL 0 | WARN 0 | SKIP 0 | PASS 237 ]`. The suite has nine f
 | `test-edge-cases.R` | A hostile fixture questionnaire (`tests/testthat/fixtures/edge_cases.json`), checked for referential integrity and routing semantics across all files (see below) |
 | `test-validation.R` | Clear errors for invalid arguments and malformed files; safe helpers; factor columns in frames; paradata encoding (UTF-8 BOM, CRLF); zip output |
 | `test-app.R` | The Shiny server workflow (load → generate → download zip / settings → re-upload settings → bad file), and a run of the R script the app writes |
-| `test-export-layout.R` | Export folder `<Q>_<version>_SuSoMock_<timestamp>`, versioned zip names and zip-root contents, `export__info.json`, re-reading the exported STATA zip (version detection), paradata event order and roles (`suso_read_paradata()`) |
+| `test-export-layout.R` | Export folder `<Q>_<version>_SuSoMock_STATA` (`_2` when it exists), versioned zip names and zip-root contents, `export__info.json`, re-reading the exported STATA zip (version detection), paradata event order and roles (`suso_read_paradata()`) |
 | `test-formats-consistency.R` | Tabular export (`.tab`/`.do`, BOM/CRLF, `-999999999` vs Stata `.a`), `suso_validate_mock()` on both assignment modes and on a corrupted result, interviewer question and cover-first order, GeoJSON boundary, geography (area) measures, `new decimal?[]{...}` and `Quest.IRnd()` |
+| `test-localization.R` | A French/Spanish fixture (`fixtures/localized`: accents, `« »`, `¿ ¡`, `ñ ß ø Ł`, CJK, reusable categories in TSV) exported to Stata and Tabular into an accented folder; Latin-1 frame, category file and generator output; failing generators; `options(OutDec = ",")`; accented upload names in the app. Passes in UTF-8 and C locales |
 | `test-pdf.R` | PDF reader on a synthetic printout (integer types, wrapped options, conditions and validations); `ConsistsOf`; code-like text answers |
 | `helper-integrity.R` | Shared checker: unique keys, every roster row has a parent row, no orphan interviews, sequential paradata order, parseable timestamps |
 
@@ -150,7 +156,7 @@ The edge-case fixture covers:
 
 ```bash
 R CMD build .
-R CMD check --no-manual SuSoSimulate_0.4.0.tar.gz
+R CMD check --no-manual SuSoSimulate_0.5.0.tar.gz
 ```
 
 Expected: `Status: OK`.
@@ -165,7 +171,7 @@ res <- suso_mock(
   demo,
   design = suso_design(n_psu = 4, ssu_per_psu = 6,
                        strata_var = "region", psu_var = "ea_id", ssu_var = "hh_id"),
-  out_dir = "mock_demo", seed = 42)   # -> mock_demo/demo_hh_1_SuSoMock_<timestamp>/
+  out_dir = "mock_demo", seed = 42)   # -> mock_demo/demo_hh_1_SuSoMock_STATA/
 
 res                           # summary + coverage + export folder
 res$export_dir
@@ -217,7 +223,7 @@ Download the export of any questionnaire from Headquarters. The Stata format wor
 ```r
 res <- suso_mock("MYSURVEY_18_STATA_All.zip",          # version 18 is read from the name
                  design = suso_design(n_psu = 10, ssu_per_psu = 10), seed = 1)
-# -> ./MYSURVEY_18_SuSoMock_<timestamp>/MYSURVEY_18_STATA_All.zip, MYSURVEY_18_Paradata_All.zip
+# -> ./MYSURVEY_18_SuSoMock_STATA/MYSURVEY_18_STATA_All.zip, MYSURVEY_18_Paradata_All.zip
 res$coverage$branches[res$coverage$branches$status != "covered", ]
 ```
 
@@ -238,7 +244,7 @@ The app follows the workflow of DIME's [iehfc](https://github.com/dime-worldbank
 | **2. Sample design** | PSUs, interviews per PSU (the total updates as you type, and tab 4 flags results generated with older settings), and the identifying questions that receive the stratum, PSU and household ids, pre-guessed from the cover page. The question recording the interviewer is detected. Draw the survey area on the OpenStreetMap (polygon or rectangle) or upload a GeoJSON (e.g. from geojson.io); PSU centroids fall inside it. Also set field teams, the calendar and the UTC offset. Optionally upload a preload frame (CSV). |
 | **3. Settings** | A min–max slider for each numeric or list roster trigger, bounded by its validation. Also item non-response, validation-error injection, special values, branch-steering strength, coverage repair and budget, final status shares, and the seed. |
 | **4. Generate & review** | One click generates the data, with a progress bar. Value boxes show interviews, branch coverage, option coverage and paradata events. Tabs hold the coverage report (uncovered branches first, with unreachable notes), option coverage, a browser for every export file, the paradata, and the system files. |
-| **5. Export** | Choose Stata or Tabular, set the questionnaire version (pre-filled from an uploaded HQ export), then download `<Q>_<version>_SuSoMock_<timestamp>.zip` or save the same folder to a path on your computer: `<Q>_<version>_STATA_All.zip` (or `_Tabular_All.zip`), `<Q>_<version>_Paradata_All.zip`, `assignments.tab`, coverage reports, sample frame and settings, plus `reproduce_mock.R` and `load_mock.do`. You can also save the settings as JSON and load them back later (or share them with the team), and download the template code: an R script that reproduces the run, and a Stata do-file that loads every file and merges each roster onto its parent. |
+| **5. Export** | Choose Stata or Tabular, set the questionnaire version (pre-filled from an uploaded HQ export), then download `<Q>_<version>_SuSoMock_STATA.zip` (or `_Tabular.zip`) or save the same folder to a path on your computer: `<Q>_<version>_STATA_All.zip` (or `_Tabular_All.zip`), `<Q>_<version>_Paradata_All.zip`, `assignments.tab`, coverage reports, sample frame and settings, plus `reproduce_mock.R` and `load_mock.do`. You can also save the settings as JSON and load them back later (or share them with the team), and download the template code: an R script that reproduces the run, and a Stata do-file that loads every file and merges each roster onto its parent. |
 
 <p align="center">
 <img src="man/figures/app-1_questionnaire.png" width="49%" alt="Questionnaire tab"/>
@@ -271,7 +277,7 @@ res <- suso_mock(
     error_rate = 0.02,                           # 2% of validated answers deliberately invalid
     tz_offset = "+03:00",
     status_mix = c("100" = .2, "120" = .3, "130" = .5)),
-  out_dir = "D:/mock",                           # parent folder of <Q>_<version>_SuSoMock_<timestamp>/
+  out_dir = "D:/mock",                           # parent folder of <Q>_<version>_SuSoMock_STATA/
   version = 18,                                  # HQ questionnaire version in the export names
   format = "stata",                              # or "tabular"
   seed = 2025)
@@ -339,6 +345,7 @@ Survey area: `suso_design(boundary = "area.geojson")` (a file or GeoJSON string 
 | `unsupported_p` | 0.5 | TRUE-probability used for conditions the translator cannot run |
 | `na_numeric`, `na_string` | `.a`, `"##N/A##"` | Codes for *enabled but unanswered* values (SuSo 24.x: Stata `.a`, Tabular `-999999999`) |
 | `pause_rate`, `correction_rate`, `comment_rate` | 0.3, 0.04, 0.004 | Paradata realism: pauses, answer corrections, comments |
+| `geo_format` | `"geometry_string"` | Format of geography answers, as in the HQ workspace setting: `"geometry_string"` (`lon,lat;…`, as in the reference export), `"wkt"` (HQ's default for new workspaces) or `"geojson"` |
 | `cover_first` | `TRUE` | Identifying (cover) questions and the interviewer question right after the ids in the main file, as on the assignment. `FALSE` keeps HQ's document order (exact HQ column order) |
 | `restart_rate`, `rejection_rate` | 0.15, 0.2 | Share of interviews with a `Restarted` cycle / a supervisor rejection before the final status |
 | `max_passes`, `max_tries`, `max_roster_rows` | 5, 25, 200 | Engine limits |
@@ -364,7 +371,7 @@ res <- suso_mock("document.json",
 ## Output
 
 ```
-<out_dir>/<Q>_<version>_SuSoMock_<YYYYMMDD_HHMMSS>/
+<out_dir>/<Q>_<version>_SuSoMock_STATA/      (or _SuSoMock_Tabular/, after the export format)
 ├── <Q>_<version>_STATA_All.zip        same layout as the HQ download (files at the zip root)
 ├── <Q>_<version>_STATA_All/           format = "stata"
 │   ├── <Q>.dta                       main file, named after the questionnaire variable
@@ -386,7 +393,7 @@ res <- suso_mock("document.json",
 └── mock_config.json                  every setting used (reproducibility)
 ```
 
-`<Q>` is the questionnaire variable name. A second export in the same second gets a `_2` suffix, so nothing is overwritten. `zip = FALSE` skips the archives.
+`<Q>` is the questionnaire variable name. An existing export folder is never overwritten: a second export of the same version and format gets `_2`, `_3`, ... `zip = FALSE` skips the archives.
 
 ### Paradata
 
@@ -513,7 +520,9 @@ These reproduce a Survey Solutions 24.x Stata and Tabular export.
 | Date / timestamp | ISO strings `2024-02-23` / `2024-02-23T11:58:16` |
 | Calculated variables | Exported unless `DoNotExport`. Booleans become 1/0 |
 | Missing values | Disabled: `.` / empty (numeric) or `""` (string). Enabled but unanswered: Stata `.a`, Tabular `-999999999` (numeric) or `##N/A##` (string) |
-| Geography (area) | `var` (`lon,lat;lon,lat;…`), `var__area` (m²), `var__len` (m), `var__num` (points), `var__racc`, `var__rfrq` (requested accuracy / frequency in automatic mode) |
+| Geography (area) | `var` (geometry string `lon,lat;…`, WKT `POLYGON ((lon lat, …))` closed and without line breaks, or GeoJSON), `var__area` (m², 0 unless a polygon), `var__len` (m, 0 unless a polygon or polyline), `var__num` (points recorded), `var__racc`, `var__rfrq` (requested accuracy / frequency in automatic mode). In expressions, `.Area` and `.Length` are null for other geometry types |
+| GPS timestamps | `var__Timestamp` in UTC; timestamp questions in device time |
+| Assignments file | `assignments.tab`: the identifying (cover) variables, `_responsible` and `_quantity`, uploadable to HQ as is |
 | Tabular `.do` files | `clear` + `insheet`, then value/variable labels: full question text (no 80-character cut), apostrophes dropped, multi-select and list columns labelled `text:option`; reusable categories defined once under their category name |
 | Variable labels | VariableLabel if set, otherwise question text. HTML tags removed, whitespace kept, cut at 80 characters. Multi-select columns use `VariableLabel:Option` when a VariableLabel exists |
 | Value labels | Options of single-selects and numeric special values (e.g. `-98 "Don't know"`); `interview__status` (13 codes) |
@@ -555,7 +564,7 @@ Timestamps are UTC with milliseconds; `tz_offset` uses .NET format (`03:00:00`).
 ## Working with the output in Stata
 
 ```stata
-cd "mock_demo/demo_hh_1_SuSoMock_20250301_101500/demo_hh_1_STATA_All"
+cd "mock_demo/demo_hh_1_SuSoMock_STATA/demo_hh_1_STATA_All"
 
 * household file
 use demo_hh, clear
@@ -578,7 +587,44 @@ keep if event == "AnswerSet"
 
 ---
 
+## Localised questionnaires and special characters
+
+Every string that enters the package goes through one sanitising step (`R/text.R`):
+
+| Input | What happens |
+|---|---|
+| Questionnaire JSON, category files (`.xlsx`, `.tsv`, `.csv`), frames, settings JSON, GeoJSON, wizard answers | Read as UTF-8 (BOM removed). Latin-1 / Windows-1252 bytes, e.g. a CSV saved by Excel on Windows, are converted to UTF-8, and control characters are dropped |
+| Generator output | Same conversion; a generator that throws an error leaves that answer unanswered instead of stopping the run |
+| Data, labels, paradata | Written as UTF-8 in `.dta`, `.tab`, `.do` and `paradata.tab`; accents, `« »`, `¿ ¡` and curly quotes are kept as in the questionnaire |
+| File and folder names | ASCII-safe (`enquête_ménages` becomes `enquete_menages`) |
+| Interviewer logins | ASCII, from the interviewer question (`José Peña` becomes `JosePena`) |
+| Keyword heuristics | Run on accent-folded text in English, French, Spanish and Portuguese (`Âge`, `Edad`, `Téléphone`, `Commune`, `Municipio`, `Nombre`, `Enquêteur`, ...) |
+| Text answers | Names, places and words in the questionnaire's language (detected: English, French or Spanish) |
+| Numbers | Always written with `.` as the decimal mark, whatever `options(OutDec)` is |
+| Dates in readme files | In English, as HQ writes them, whatever `LC_TIME` is |
+
+If R runs in a locale that cannot represent the output folder path (e.g. an accented folder in a `C` locale), `suso_mock()` stops before generating, with a message that names the cause.
+
+---
+
 ## Validation against a real export
+
+### Checked against the Survey Solutions documentation
+
+The conventions were reviewed against the official documentation ([docs.mysurvey.solutions](https://docs.mysurvey.solutions/)) and the [user forum](https://forum.mysurvey.solutions/):
+
+| Topic | Documentation | SuSoSimulate |
+|---|---|---|
+| Missing values | Skipped: system missing / blank; enabled but unanswered: `-999,999,999` and `##N/A##`; Stata uses `.a` | Same |
+| Export formats | Tab: `.tab` + a `.do` per file; Stata: `.dta` version 14, Unicode | Same |
+| Variable names | English letters, digits, underscore; the questionnaire variable names the main file | Same (file names are kept ASCII) |
+| System files | `assignment__actions`, `interview__actions`, `__comments`, `__diagnostics`, `__errors`, codes for roles, actions, statuses | Same, labelled as in HQ 24.06 |
+| Paradata | `paradata.tab`, `paradata.do`, `export__readme.txt`, `export__info.json`; columns and event names; roster address `2,5,0` | Same; parameter details follow the real 24.06 export where the documentation is older (e.g. `VariableDisabled var\|\|rv`, empty `InterviewCreated`) |
+| DateTime values | Paradata: `M/D/YYYY h:m:s AM/PM` for DateTime variables, `YYYY-MM-DD hh:mm:ss` for timestamp answers; GPS timestamps in UTC | Same |
+| Geography | Geometry string, WKT (default) or GeoJSON; `__area`, `__len`, `__num` | Same, selectable with `geo_format` |
+| Assignments upload | Tab file with the identifying variables, `_responsible`, `_quantity` | `assignments.tab` |
+
+Where the documentation and the real 24.06 exports in hand differ (e.g. the comment date format, newer assignment action codes 10–13, GPS provider fields added in 26.09), SuSoSimulate follows the real exports.
 
 Benchmark (30 interviews, `repair_time = 60`, one CPU core):
 
@@ -608,6 +654,7 @@ The test also translated every one of the questionnaire's 237 enabling condition
 
 - **Lookup tables.** `table[row].col` and `LinkedFilterExpression` with `@current` are not translated. They fall back to a random draw and are flagged in `$coverage$branches$issue`.
 - **Unverified formats.** The export layout of single-selects linked to *nested* rosters, and the paradata value of geography answers, have not been checked against a real export. Please open an issue with an example if they differ.
+- **Progress.** The console and the app show elapsed time and an estimate of the time left (generation), or the most time left (coverage repair, bounded by `repair_time`).
 - **The app runs one job at a time.** While data are being generated, the app cannot react to other inputs; changes made meanwhile are applied once the run ends, and tab 4 then shows that the results are out of date.
 - **Numeric special values** are generated only when the validations accept them.
 - **Speed.** About 0.1 s per interview on simple questionnaires and about 1.5 s on heavy ones: 57-row fixed rosters with nested LINQ conditions are evaluated many times per pass. Coverage repair adds candidate interviews, capped by `repair_budget` and `repair_time`.
@@ -626,7 +673,9 @@ The test also translated every one of the questionnaire's 237 enabling condition
 | Coverage repair is slow | Lower `repair_time` (e.g. 30) or set `coverage_repair = FALSE`. Each repair candidate is a full interview; on heavy questionnaires that is several seconds |
 | `! N interviews did not reach a stable state` | The questionnaire has circular conditions. Increase `max_passes`, or check the reported items |
 | `Stata names limited to 32 characters; renamed: …` | A generated column name (e.g. `var__Timestamp`) is over 32 characters. It is shortened with a collision-safe suffix; to avoid this, shorten the variable name in Designer |
-| Text looks garbled in Stata | Use Stata 14 or later (the files are written as version 14, UTF-8) |
+| Text looks garbled in Stata | Use Stata 14 or later (the files are written as version 14, UTF-8). For Tabular files, run the `.do` file, which reads the `.tab` as UTF-8 |
+| `Cannot write to the output folder ... locale` | R runs in a non-UTF-8 locale. Use an ASCII folder name, or start R with a UTF-8 locale (e.g. `LANG=en_US.UTF-8`) |
+| Accented text shows as `Ã©` in your frame | The CSV was read with the wrong encoding before it reached SuSoSimulate. Pass the file path to the app or use `suso_mock_interactive()`, which detect Windows-1252/Latin-1 |
 | `markitdown CLI not available` | `pip install "markitdown[pdf]"`, or use `pdf_engine = "pdftools"` |
 | `The app needs: shiny, bslib, DT` | `install.packages(c("shiny", "bslib", "DT"))` |
 | App: "Generation failed: …" notification | The message is the same error `suso_mock()` would raise, for example an invalid setting. Fix the setting and click Generate again |
@@ -651,6 +700,7 @@ R/
   tabular.R             Tabular export (.tab + .do)
   validate.R            suso_validate_mock(): cross-file consistency
   geo.R                 survey boundary (GeoJSON) and point sampling
+  text.R                UTF-8 repair, accent folding, safe names, language pools
   suso_mock.R           main entry point and writer
   interactive.R         console wizard
   app.R                 Shiny app: suso_app(), UI, server, R/Stata template code
@@ -661,6 +711,22 @@ tests/testthat/                    test suite (+ fixtures/edge_cases.json)
 
 ---
 
+## Reporting bugs
+
+Please open an issue on the [GitHub repository](https://github.com/emawbgit/SuSoSimulate/issues) with your R version and `packageVersion("SuSoSimulate")`, the call you ran (or the app settings, saved as JSON from tab 5), the error message, and a small example: ideally the questionnaire's `content.zip` or `document.json`, if it can be shared. If the problem is in the exported files, say which Stata version you used to open them.
+
+## Citation
+
+If you use SuSoSimulate in your research, please cite:
+
+Clemente, E. "SuSoSimulate: Mock data and paradata generator for Survey Solutions questionnaires." https://github.com/emawbgit/SuSoSimulate, version 0.5.0.
+
+In R: `citation("SuSoSimulate")`.
+
+## Authors
+
+Emanuele Clemente ([emanueleclemente91@gmail.com](mailto:emanueleclemente91@gmail.com)), [github.com/emawbgit](https://github.com/emawbgit)
+
 ## License
 
-Apache License 2.0 (see [LICENSE](LICENSE)) © Emanuele Clemente. Survey Solutions is developed by the World Bank; this package is an independent tool and is not affiliated with or endorsed by the World Bank.
+MIT (see [LICENSE.md](LICENSE.md)) © 2026 Emanuele Clemente. Survey Solutions is developed by the World Bank; this package is an independent tool and is not affiliated with or endorsed by the World Bank. The app bundles Leaflet (BSD-2-Clause) and Leaflet.draw (MIT).

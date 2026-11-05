@@ -36,7 +36,7 @@ missing_branches <- function(qn, cov) {
   out
 }
 
-repair_coverage <- function(qn, cfg, frame, states, cov, verbose = TRUE) {
+repair_coverage <- function(qn, cfg, frame, states, cov, verbose = TRUE, progress = function(...) NULL) {
   # outcomes the questionnaire's own validation bounds rule out can never be hit: don't spend the budget on them
   hopeless <- function(k) nzchar(unreachable_hint(qn, qn$nodes[[sub(":[TF]$", "", k)]], need = grepl(":T$", k)))
   miss0 <- missing_branches(qn, cov)
@@ -49,11 +49,22 @@ repair_coverage <- function(qn, cfg, frame, states, cov, verbose = TRUE) {
   vmap <- list()
   for (id in qn$order) { v <- qn$nodes[[id]]$varname %||% ""; if (nzchar(v)) vmap[[v]] <- id }
   tries <- 0L; swaps <- 0L; last_gain <- 0L
-  t_end <- Sys.time() + (cfg$repair_time %||% Inf)
+  t0 <- Sys.time(); t_end <- t0 + (cfg$repair_time %||% Inf); shown <- t0; pv <- 0.72
   while (tries < cfg$repair_budget && tries - last_gain < patience && Sys.time() < t_end) {
     miss <- setdiff(missing_branches(qn, cov), dead)
     if (!length(miss)) break
     tries <- tries + 1L
+    # time left: the smallest of the time limit, the remaining budget and the patience window
+    el <- as.numeric(difftime(Sys.time(), t0, units = "secs")); per <- if (tries > 1) el / (tries - 1) else NA
+    left <- min(as.numeric(difftime(t_end, Sys.time(), units = "secs")),
+                per * (cfg$repair_budget - tries + 1), per * (patience - (tries - last_gain) + 1), na.rm = TRUE)
+    pv <- max(pv, 0.72 + 0.12 * min(1, el / max(1, el + left)))          # never moves backwards
+    progress(pv,
+             sprintf("Repairing coverage: %d outcomes left, candidate %d - at most %s left", length(miss), tries, fmt_secs(left)))
+    if (verbose && difftime(Sys.time(), shown, units = "secs") > 10) {
+      message(sprintf("  repair: %d candidates, %d swapped, %d outcomes uncovered, at most %s left", tries - 1, swaps, length(miss), fmt_secs(left)))
+      shown <- Sys.time()
+    }
     keys <- lapply(states, function(st) ls(st$hits))
     repl <- which(vapply(keys, function(k) all(vapply(k, function(x) env_get(cov$counts, x) >= 2, TRUE)), TRUE))
     if (length(repl)) {

@@ -25,7 +25,7 @@ or a `suso_questionnaire` object.}
 
 \item{config}{A [suso_mock_config()] object.}
 
-\item{out_dir}{Folder in which the export folder `<Questionnaire>_<version>_SuSoMock_<timestamp>`
+\item{out_dir}{Folder in which the export folder `<Questionnaire>_<version>_SuSoMock_<STATA|Tabular>`
 is created (default: working directory). `NULL` returns data without writing.}
 
 \item{version}{Questionnaire version number used in the export names

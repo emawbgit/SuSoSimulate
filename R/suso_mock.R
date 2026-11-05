@@ -8,7 +8,7 @@
 #'   or a `suso_questionnaire` object.
 #' @param design A [suso_design()] object (sampling frame, teams, calendar).
 #' @param config A [suso_mock_config()] object.
-#' @param out_dir Folder in which the export folder `<Questionnaire>_<version>_SuSoMock_<timestamp>`
+#' @param out_dir Folder in which the export folder `<Questionnaire>_<version>_SuSoMock_<STATA|Tabular>`
 #'   is created (default: working directory). `NULL` returns data without writing.
 #' @param format Export format, as chosen in HQ: `"stata"` (`.dta`, `<Q>_<v>_STATA_All`)
 #'   or `"tabular"` (`.tab` + `.do`, `<Q>_<v>_Tabular_All`).
@@ -36,6 +36,7 @@ suso_mock <- function(questionnaire, design = suso_design(), config = suso_mock_
     set.seed(seed)
   }
   progress <- if (is.function(progress)) progress else function(...) invisible(NULL)
+  if (!is.null(out_dir)) out_dir <- check_out_dir(out_dir)      # fail before generating, not after
   qn <- if (inherits(questionnaire, "suso_questionnaire")) questionnaire else suso_read_questionnaire(questionnaire, verbose = verbose)
   version <- resolve_version(version, qn)
   frame <- build_frame(design, qn)
@@ -44,18 +45,23 @@ suso_mock <- function(questionnaire, design = suso_design(), config = suso_mock_
   sm_msg(verbose, sprintf("Generating %d interviews (%d PSUs)...", n, length(unique(frame$meta$psu))))
   cov <- new_coverage()
   states <- vector("list", n)
-  t0 <- Sys.time()
+  t0 <- Sys.time(); last <- t0
   step <- max(1L, n %/% 10L)
   for (i in seq_len(n)) {
-    states[[i]] <- generate_interview(qn, config, frame_unit(frame, i), cov)
+    states[[i]] <- tryCatch(generate_interview(qn, config, frame_unit(frame, i), cov), error = function(e)
+      stop(sprintf("Interview %d of %d failed: %s", i, n, conditionMessage(e)), call. = FALSE))
     cov_commit(cov, states[[i]])
-    progress(0.7 * i / n, sprintf("Interview %d of %d", i, n))
-    if (verbose && (i %% step == 0 || i == n))
-      message(sprintf("  %d/%d  (%.1fs)", i, n, as.numeric(difftime(Sys.time(), t0, units = "secs"))))
+    el <- as.numeric(difftime(Sys.time(), t0, units = "secs"))
+    eta <- el / i * (n - i)
+    progress(0.7 * i / n, sprintf("Interview %d of %d - %s elapsed, about %s left", i, n, fmt_secs(el), fmt_secs(eta)))
+    if (verbose && (i %% step == 0 || i == n || difftime(Sys.time(), last, units = "secs") > 10)) {
+      message(sprintf("  %d/%d  %s elapsed, ETA %s", i, n, fmt_secs(el), if (i == n) "done" else fmt_secs(eta)))
+      last <- Sys.time()
+    }
   }
   if (isTRUE(config$coverage_repair)) {
     progress(0.72, "Repairing branch coverage")
-    states <- repair_coverage(qn, config, frame, states, cov, verbose)
+    states <- repair_coverage(qn, config, frame, states, cov, verbose, progress = progress)
   }
   n <- length(states)
   nonconv <- sum(!vapply(states, `[[`, TRUE, "converged"))
@@ -94,8 +100,35 @@ suso_mock <- function(questionnaire, design = suso_design(), config = suso_mock_
   res
 }
 
-mock_dir_name <- function(q, version, timestamp = Sys.time())
-  sprintf("%s_%d_SuSoMock_%s", q, as.integer(version), format(timestamp, "%Y%m%d_%H%M%S"))
+# Output folder: created if needed and tested for writing, with a clear message when the
+# path cannot be used (e.g. accented folder names in a session running a C/ASCII locale)
+check_out_dir <- function(out_dir) {
+  if (!is.character(out_dir) || length(out_dir) != 1 || is.na(out_dir) || !nzchar(out_dir))
+    stop("`out_dir` must be a folder path.", call. = FALSE)
+  out_dir <- as_utf8(out_dir)
+  ok <- tryCatch({
+    if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+    f <- tempfile("write_test_", tmpdir = out_dir); ok <- file.create(f, showWarnings = FALSE); unlink(f); ok && dir.exists(out_dir)
+  }, error = function(e) e, warning = function(w) w)
+  if (!isTRUE(ok)) {
+    why <- if (inherits(ok, "condition")) conditionMessage(ok) else "not writable"
+    hint <- if (!l10n_info()[["UTF-8"]] && any(utf8ToInt(out_dir) > 127L))
+      sprintf(" The path has non-ASCII characters and this R session's locale (%s) cannot represent them: use an ASCII folder name, or start R in a UTF-8 locale.", Sys.getlocale("LC_CTYPE")) else ""
+    stop(sprintf("Cannot write to the output folder '%s' (%s).%s", out_dir, why, hint), call. = FALSE)
+  }
+  normalizePath(out_dir, mustWork = FALSE)
+}
+
+# <Q>_<version>_SuSoMock_STATA | <Q>_<version>_SuSoMock_Tabular (the export format, as chosen)
+mock_dir_name <- function(q, version, format = "stata")
+  sprintf("%s_%d_SuSoMock_%s", safe_file_name(q), as.integer(version), if (identical(format, "tabular")) "Tabular" else "STATA")
+
+# "Thursday, 05 November 2026" whatever the session's LC_TIME (HQ readmes are in English)
+english_date <- function(t) {
+  lt <- as.POSIXlt(t)
+  sprintf("%s, %02d %s %d", c("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")[lt$wday + 1],
+          lt$mday, month.name[lt$mon + 1], lt$year + 1900)
+}
 
 # Assignments as uploaded to HQ (tab-delimited preload file): one row per assignment
 # with its preloaded cover values, responsible interviewer and quantity
@@ -124,7 +157,7 @@ resolve_version <- function(version, qn) {
 
 #' Write a `suso_mock` result to disk, laid out like a Survey Solutions HQ download
 #'
-#' Creates `<out_dir>/<Q>_SuSoMock_<timestamp>/` containing
+#' Creates `<out_dir>/<Q>_<version>_SuSoMock_STATA/` (or `..._Tabular/`) containing
 #' `<Q>_<version>_STATA_All` and `<Q>_<version>_Paradata_All` (folders and, with
 #' `zip = TRUE`, the matching `.zip` archives with files at the archive root,
 #' as HQ produces them), plus coverage reports, the sample frame and settings.
@@ -135,19 +168,18 @@ resolve_version <- function(version, qn) {
 #' @param version Questionnaire version (default: the one used by [suso_mock()]).
 #' @param format `"stata"` or `"tabular"` (default: the one used by [suso_mock()]).
 #' @param zip Also create the HQ-style zip archives.
-#' @param timestamp Time used in the export folder name.
 #' @param verbose Print progress.
 #' @return The export folder path, invisibly.
 #' @export
 write_suso_mock <- function(x, out_dir = ".", version = x$version, format = x$format %||% "stata", zip = TRUE,
-                            timestamp = Sys.time(), verbose = TRUE) {
+                            verbose = TRUE) {
   qn <- x$questionnaire
-  q <- qn$varname
+  q <- safe_file_name(qn$varname)                  # ASCII, valid on every OS
   version <- resolve_version(version, qn)
   format <- match.arg(format, c("stata", "tabular"))
   tab <- format == "tabular"
-  if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
-  root <- file.path(normalizePath(out_dir), mock_dir_name(q, version, timestamp))
+  out_dir <- check_out_dir(out_dir)
+  root <- file.path(out_dir, mock_dir_name(q, version, format))   # an existing export is never overwritten: _2, _3, ...
   k <- 1L; base <- root
   while (dir.exists(root)) { k <- k + 1L; root <- paste0(base, "_", k) }
   dir.create(root)
@@ -156,7 +188,7 @@ write_suso_mock <- function(x, out_dir = ".", version = x$version, format = x$fo
   dir.create(dd); dir.create(pd)
   qid <- tolower(gsub("-", "", qn$id))
   gen <- sprintf("Generated by SuSoSimulate %s (mock Survey Solutions export) on %s",
-                 utils::packageVersion("SuSoSimulate"), format(Sys.time(), "%A, %d %B %Y"))
+                 utils::packageVersion("SuSoSimulate"), english_date(Sys.time()))
   head <- c(gen,
     sprintf("The data in this download are SYNTHETIC, generated from the Survey Solutions questionnaire \"%s\" (version %d). ", qn$title, version),
     sprintf("You can open the questionnaire in the Survey Solutions Designer online by that link: https://designer.mysurvey.solutions/questionnaire/details/%s%s",
@@ -166,20 +198,25 @@ write_suso_mock <- function(x, out_dir = ".", version = x$version, format = x$fo
   ext <- if (tab) ".tab" else ".dta"
   main <- names(x$data)[1]
   for (nm in c(names(x$data), names(x$system))) {
-    df <- x$data[[nm]] %||% x$system[[nm]]
-    if (!tab) { write_dta_safe(df, file.path(dd, paste0(nm, ext))); next }
-    df <- stata_safe_names(df)
-    write_tab(df, file.path(dd, paste0(nm, ext)))
-    kind <- if (nm == main) "main" else if (nm %in% names(x$data)) "roster" else "system"
-    write_text_raw(write_do(df, nm, kind), file.path(dd, paste0(nm, ".do")))
+    df <- sanitize_df(x$data[[nm]] %||% x$system[[nm]])      # last guard: valid UTF-8 everywhere
+    fn <- safe_file_name(nm)
+    tryCatch({
+      if (!tab) write_dta_safe(df, file.path(dd, paste0(fn, ext)))
+      else {
+        df <- stata_safe_names(df)
+        write_tab(df, file.path(dd, paste0(fn, ext)))
+        kind <- if (nm == main) "main" else if (nm %in% names(x$data)) "roster" else "system"
+        write_text_raw(write_do(df, fn, kind), file.path(dd, paste0(fn, ".do")))
+      }
+    }, error = function(e) stop(sprintf("Could not write %s%s: %s", fn, ext, conditionMessage(e)), call. = FALSE))
   }
   rd <- c(head, "")
   idc <- c("interview__key", "interview__id", "sssys_irnd", "has__errors", "interview__status", "assignment__id")
   for (nm in names(x$data)) {
     v <- setdiff(names(x$data[[nm]]), c(idc, grep("__id$", names(x$data[[nm]]), value = TRUE)))
-    rd <- c(rd, paste0(nm, ext), paste(unique(sub("__.*$", "", v)), collapse = ", "), "")
+    rd <- c(rd, paste0(safe_file_name(nm), ext), paste(unique(sub("__.*$", "", v)), collapse = ", "), "")
   }
-  writeLines(rd, file.path(dd, "export__readme.txt"))
+  write_lines_utf8(rd, file.path(dd, "export__readme.txt"))
   write_questionnaire_content(qn, file.path(dd, "Questionnaire"))
 
   # Paradata_All: export__info.json + readme + paradata.tab + paradata.do
@@ -187,9 +224,9 @@ write_suso_mock <- function(x, out_dir = ".", version = x$version, format = x$fo
                             ExportServiceVersion = paste("SuSoSimulate", utils::packageVersion("SuSoSimulate")),
                             QuestionnaireId = sprintf("%s$%d", qid, version)),
                        file.path(pd, "export__info.json"), auto_unbox = TRUE, pretty = TRUE)
-  writeLines(head, file.path(pd, "export__readme.txt"))
-  write_paradata_tab(x$paradata, file.path(pd, "paradata.tab"))
-  writeLines(c('insheet using "paradata.tab", tab case names',
+  write_lines_utf8(head, file.path(pd, "export__readme.txt"))
+  write_paradata_tab(sanitize_df(x$paradata), file.path(pd, "paradata.tab"))
+  write_lines_utf8(c('insheet using "paradata.tab", tab case names',
     'label variable interview__id `"Unique 32-character long identifier of the interview"\'',
     'label variable order `"Sequential event number within each interview"\'',
     'label variable event `"Type of event happened"\'',
@@ -202,10 +239,11 @@ write_suso_mock <- function(x, out_dir = ".", version = x$version, format = x$fo
     'label variable parameters `"Event-specific parameters"\''), file.path(pd, "paradata.do"))
 
   # reports and settings beside the two exports
-  utils::write.csv(x$coverage$branches, file.path(root, "coverage_branches.csv"), row.names = FALSE)
-  utils::write.csv(x$coverage$options, file.path(root, "coverage_options.csv"), row.names = FALSE)
-  utils::write.csv(x$frame, file.path(root, "sample_frame.csv"), row.names = FALSE)
-  write_tab(assignments_table(x), file.path(root, "assignments.tab"))
+  utils::write.csv(x$coverage$branches, file.path(root, "coverage_branches.csv"), row.names = FALSE, fileEncoding = "UTF-8")
+  utils::write.csv(x$coverage$options, file.path(root, "coverage_options.csv"), row.names = FALSE, fileEncoding = "UTF-8")
+  utils::write.csv(x$frame, file.path(root, "sample_frame.csv"), row.names = FALSE, fileEncoding = "UTF-8")
+  asg <- assignments_table(x)                       # HQ upload format: cover variables, _responsible, _quantity
+  write_tab(asg[setdiff(names(asg), "assignment__id")], file.path(root, "assignments.tab"))
   cfg <- unclass(x$config); cfg$generators <- names(cfg$generators); cfg$roster_sizes <- lapply(cfg$roster_sizes, function(r) if (is.function(r)) "<function>" else r)
   des <- unclass(x$design); des$frame <- if (is.null(des$frame)) NULL else "<user frame>"; des$preload <- names(des$preload)
   des$start_date <- as.character(des$start_date)

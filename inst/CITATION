@@ -1,0 +1,10 @@
+bibentry(
+  bibtype = "Manual",
+  title = "{SuSoSimulate}: Mock Data and Paradata Generator for Survey Solutions Questionnaires",
+  author = person("Emanuele", "Clemente", email = "emanueleclemente91@gmail.com"),
+  year = "2026",
+  note = paste("R package version", meta$Version),
+  url = "https://github.com/emawbgit/SuSoSimulate",
+  textVersion = paste0("Clemente, E. (2026). SuSoSimulate: Mock data and paradata generator for Survey Solutions ",
+                       "questionnaires. R package version ", meta$Version, ". https://github.com/emawbgit/SuSoSimulate")
+)

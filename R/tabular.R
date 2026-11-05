@@ -12,7 +12,7 @@
 tab_cell <- function(x) {
   if (inherits(x, "haven_labelled")) x <- unclass(x)
   if (is.numeric(x)) {
-    out <- formatC(x, digits = 15, format = "fg", flag = "")
+    out <- formatC(x, digits = 15, format = "fg", flag = "", decimal.mark = ".", big.mark = "")   # independent of options(OutDec)
     out <- trimws(out)
     out[is.na(x)] <- ""
     out[haven::is_tagged_na(x, "a")] <- .tab_na
@@ -76,6 +76,9 @@ write_text_raw <- function(txt, path) {
   con <- file(path, open = "wb"); on.exit(close(con))
   writeBin(charToRaw(enc2utf8(txt)), con)
 }
+
+# text files as HQ writes them: UTF-8 (no BOM), LF; independent of the session's native encoding
+write_lines_utf8 <- function(lines, path) write_text_raw(paste0(paste(as_utf8(lines), collapse = "\n"), "\n"), path)
 
 write_lines_crlf <- function(lines, path) {
   con <- file(path, open = "wb"); on.exit(close(con))

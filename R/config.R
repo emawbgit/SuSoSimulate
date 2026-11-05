@@ -33,6 +33,8 @@
 #'   are left unanswered (times `target_prob`), so null branches get covered.
 #' @param special_value_rate Share of numeric answers drawn from the question's special
 #'   values (e.g. -98 "Don't know"), when it has any (still subject to validations).
+#' @param geo_format Export format of geography (area) answers, as set in the HQ workspace
+#'   settings: `"geometry_string"` (`lon,lat;lon,lat;...`), `"wkt"` (HQ's default) or `"geojson"`.
 #' @param cover_first Put the identifying (cover) questions and the interviewer question
 #'   right after `interview__key`/`interview__id` in the main file, in the order of the
 #'   assignment. `FALSE` keeps HQ's document order.
@@ -54,8 +56,9 @@ suso_mock_config <- function(item_nonresponse = 0, error_rate = 0, target_prob =
                              allow_augment = FALSE, unsupported_p = 0.5, max_passes = 5,
                              max_tries = 25, max_roster_rows = 200,
                              na_numeric = haven::tagged_na("a"), na_string = "##N/A##",
-                             null_share = 0.25, special_value_rate = 0.03, cover_first = TRUE, restart_rate = 0.15, rejection_rate = 0.2,
+                             null_share = 0.25, special_value_rate = 0.03, cover_first = TRUE, geo_format = c("geometry_string", "wkt", "geojson"), restart_rate = 0.15, rejection_rate = 0.2,
                              pause_rate = 0.3, correction_rate = 0.04, comment_rate = 0.004) {
+  geo_format <- match.arg(geo_format)
   cfg <- structure(as.list(environment()), class = "suso_mock_config")
   validate_config(cfg)
   cfg
@@ -159,7 +162,7 @@ build_frame <- function(design, qn) {
     }
   }
   if (!is.null(d$frame)) {
-    fr <- as.data.frame(d$frame, stringsAsFactors = FALSE)
+    fr <- sanitize_df(as.data.frame(d$frame, stringsAsFactors = FALSE))     # e.g. Latin-1 CSV from Excel
     fr[] <- lapply(fr, function(x) if (is.factor(x)) as.character(x) else x)
     n <- nrow(fr)
     psu <- if (!is.null(fr$.psu)) as.integer(factor(fr$.psu, levels = unique(fr$.psu)))
@@ -183,7 +186,7 @@ build_frame <- function(design, qn) {
   }
   for (v in names(d$preload)) {
     p <- d$preload[[v]]
-    fr[[v]] <- if (is.function(p)) p(fr) else rep_len(p, n)
+    fr[[v]] <- as_utf8(if (is.function(p)) p(fr) else rep_len(p, n))
   }
   n_psu <- max(psu)
   n_int <- d$n_interviewers %||% max(1L, ceiling(n_psu / 2))
@@ -206,7 +209,7 @@ build_frame <- function(design, qn) {
       n_int <- nrow(ivn$options); n_sup <- max(1L, ceiling(n_int / d$interviewers_per_supervisor))
     }
     iv_codes <- ivn$options$code[seq_len(n_int)]
-    lg <- gsub("[^A-Za-z0-9_.-]", "", strip_html(ivn$options$label[seq_len(n_int)]))
+    lg <- safe_login(ivn$options$label[seq_len(n_int)])            # "José Peña" -> "JosePena"
     lg[!nzchar(lg)] <- sprintf("int%03d", which(!nzchar(lg)))
     ints <- make.unique(lg, sep = "")
   }
@@ -238,10 +241,10 @@ build_frame <- function(design, qn) {
 }
 
 guess_interviewer_var <- function(qn) {
-  rx <- "enumerator|interviewer|field ?officer|enqu[e\u00ea]teur|^fo(_?name|_?id|_?code)?$|^enum_|^int_?(name|id|code)$"
+  rx <- "enumerator|interviewer|field ?officer|enqueteur|encuestador|entrevistador|agent recenseur|recenseur|^fo(_?name|_?id|_?code)?$|^enum_|^int_?(name|id|code)$"
   cand <- Filter(function(nd) identical(nd$kind, "question") && !length(nd$path) && is.null(nd$lnk) &&
                    nd$qtype %in% c("single", "text", "numeric") &&
-                   (grepl(rx, tolower(nd$varname)) || grepl("enumerator|interviewer", tolower(strip_html(nd$text)))),
+                   (grepl(rx, fold(nd$varname)) || grepl("enumerator|interviewer|enqueteur|encuestador|entrevistador", nd$fold %||% "")),
                  lapply(qn$order, function(i) qn$nodes[[i]]))
   if (!length(cand)) return(NULL)
   sing <- Filter(function(nd) nd$qtype == "single", cand)

@@ -17,7 +17,7 @@ test_that("Tabular export: .tab + .do per file, HQ encodings, same data as Stata
   cfg <- suso_mock_config(item_nonresponse = 0.2, coverage_repair = FALSE)
   rt <- suso_mock(demo, design = suso_design(n_psu = 2, ssu_per_psu = 3), config = cfg, out_dir = out, version = 9,
                   format = "tabular", seed = 11, verbose = FALSE)
-  expect_match(basename(rt$export_dir), "^demo_hh_9_SuSoMock_\\d{8}_\\d{6}$")
+  expect_match(basename(rt$export_dir), "^demo_hh_9_SuSoMock_Tabular$")
   td <- file.path(rt$export_dir, "demo_hh_9_Tabular_All")
   expect_true(file.exists(paste0(td, ".zip")))
   files <- c(names(rt$data), names(rt$system))
@@ -93,4 +93,27 @@ test_that("nullable typed arrays, Quest.IRnd() and RosterVector", {
   expect_true(ev("new decimal?[]{1,2,3,4}.Contains(3)", st))
   expect_false(ev("new int?[] {1,2}.Contains(5)", st))
   expect_equal(ev("(long)Math.Floor(Quest.IRnd()*8)", st), 2)
+})
+
+test_that("documented HQ conventions: geography formats, GPS UTC time, DateTime in paradata, upload file", {
+  xy <- matrix(c(0, 0, 10, 0, 10, 10, 0, 10), ncol = 2, byrow = TRUE)
+  a <- SuSoSimulate:::sus_area(xy, xy, 0L, TRUE)
+  expect_equal(SuSoSimulate:::area_string(a), "0,0;10,0;10,10;0,10")
+  expect_equal(SuSoSimulate:::area_string(a, "wkt"), "POLYGON ((0 0, 10 0, 10 10, 0 10, 0 0))")
+  expect_match(SuSoSimulate:::area_string(a, "geojson"), '^\\{"type":"Polygon","coordinates":\\[\\[\\[0,0\\]')
+  l <- SuSoSimulate:::sus_area(xy, xy, 1L)
+  expect_true(is.na(SuSoSimulate:::rt_member(l, "Area")))       # null unless a polygon
+  expect_equal(SuSoSimulate:::rt_member(l, "Length"), 30)
+  expect_equal(SuSoSimulate:::para_value(list(kind = "variable"), as.POSIXct("2024-02-23 14:05:09", tz = "UTC")),
+               "2/23/2024 2:05:09 PM")
+  r <- suso_mock(demo, design = suso_design(n_psu = 1, ssu_per_psu = 3), config = suso_mock_config(tz_offset = "+03:00"),
+                 out_dir = tempfile(), seed = 4, verbose = FALSE)
+  m <- r$data$demo_hh; p <- r$paradata
+  ok <- m$hh_gps__Timestamp != "" & m$hh_gps__Timestamp != "##N/A##"
+  ev <- p[p$event == "AnswerSet" & startsWith(p$parameters, "hh_gps||"), ]
+  for (i in which(ok))                                            # GPS timestamp in UTC, like paradata
+    expect_true(m$hh_gps__Timestamp[i] %in% substr(ev$timestamp_utc[ev$interview__id == m$interview__id[i]], 1, 19))
+  asg <- utils::read.delim(file.path(r$export_dir, "assignments.tab"), fileEncoding = "UTF-8-BOM", check.names = FALSE)
+  expect_false("assignment__id" %in% names(asg))
+  expect_true(all(c("_responsible", "_quantity") %in% names(asg)))
 })

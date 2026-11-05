@@ -1,17 +1,17 @@
 Package: SuSoSimulate
 Type: Package
 Title: Mock Data and Paradata Generator for Survey Solutions Questionnaires
-Version: 0.4.0
+Version: 0.5.0
 Authors@R: person("Emanuele", "Clemente", email = "emanueleclemente91@gmail.com", role = c("aut", "cre"))
 Description: Reads a Survey Solutions questionnaire (Designer document.json,
     Designer or Headquarters export archive, or - experimentally - the PDF
     printout), translates its C# enabling conditions, validations, filters and
     calculated variables, and generates fully routed synthetic interviews whose
-    branch coverage is checked and repaired. Writes Stata files with the same
-    multi-file relational layout, variable naming, labels and missing-value
-    conventions as a Survey Solutions export, plus consistent paradata and
-    system files.
-License: Apache License (>= 2)
+    branch coverage is checked and repaired. Writes Stata or Tabular exports
+    with the same multi-file relational layout, variable naming, labels and
+    missing-value conventions as a Survey Solutions export, plus consistent
+    paradata, system files and assignments, for questionnaires in any language.
+License: MIT + file LICENSE
 Encoding: UTF-8
 Depends: R (>= 4.1)
 Imports: jsonlite, haven, stats, tools, utils, zip

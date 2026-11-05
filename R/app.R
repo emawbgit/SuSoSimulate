@@ -84,8 +84,12 @@ app_ui <- function() {
     shiny::numericInput(id, label, value = value, min = min, max = max, step = step)
   theme <- bslib::bs_theme(version = 5, primary = "#0E7C86", secondary = "#F4A259",
                            base_font = bslib::font_collection("system-ui", "-apple-system", "Segoe UI", "sans-serif"))
-  bslib::page_navbar(
-    id = "nav", theme = theme, window_title = "SuSoSimulate", bg = "#16324F", inverse = TRUE, fillable = FALSE,
+  navbar_args <- if (utils::packageVersion("bslib") >= "0.9.0")       # bg/inverse moved to navbar_options() in bslib 0.9
+    list(navbar_options = getExportedValue("bslib", "navbar_options")(bg = "#16324F", theme = "dark"))
+  else list(bg = "#16324F", inverse = TRUE)
+  page <- function(...) do.call(bslib::page_navbar, c(list(...), navbar_args))
+  page(
+    id = "nav", theme = theme, window_title = "SuSoSimulate", fillable = FALSE,
     title = shiny::tags$span(
       shiny::tags$img(src = "susosim/logo.png", height = "34px", style = "margin-right:8px;", alt = ""),
       "SuSoSimulate"),
@@ -197,7 +201,7 @@ app_ui <- function() {
     bslib::nav_panel("5. Export", value = "x",
       bslib::layout_columns(col_widths = c(4, 4, 4),
         bslib::card(bslib::card_header("Mock export"),
-          ui_hint("Folder <Q>_<version>_SuSoMock_<timestamp> with <Q>_<version>_STATA_All.zip (or _Tabular_All) and <Q>_<version>_Paradata_All.zip as downloaded from HQ, assignments, coverage reports, sample frame and settings."),
+          ui_hint("Folder <Q>_<version>_SuSoMock_STATA (or _Tabular) with <Q>_<version>_STATA_All.zip (or _Tabular_All) and <Q>_<version>_Paradata_All.zip as downloaded from HQ, assignments, coverage reports, sample frame and settings."),
           shiny::numericInput("version", "Questionnaire version (HQ)", value = 1, min = 1, step = 1),
           shiny::radioButtons("format", "Export format", c("Stata (.dta)" = "stata", "Tabular (.tab + .do)" = "tabular"), inline = TRUE),
           shiny::downloadButton("dl_zip", "Download everything (.zip)", class = "btn-primary w-100 mb-3"),
@@ -246,7 +250,7 @@ app_server <- function(input, output, session) {
     f <- input$qfile
     if (length(f$datapath) == 1) return(load_q(f$datapath, f$name))
     td <- tempfile("q_upload_"); dir.create(td)          # document.json + Categories files -> one folder
-    file.copy(f$datapath, file.path(td, f$name))
+    file.copy(f$datapath, file.path(td, safe_file_name(f$name)))   # document.json keeps its name
     load_q(td, paste(f$name, collapse = ", "))
   })
   shiny::observeEvent(input$use_demo, load_q(system.file("extdata", "demo_household.json", package = "SuSoSimulate"),
@@ -330,14 +334,14 @@ app_server <- function(input, output, session) {
     j <- input$boundary_geojson
     if (!nzchar(j %||% "") || grepl('"features":\\[\\]', j)) rv$boundary <- NULL else set_boundary(j, from_map = TRUE)
   })
-  shiny::observeEvent(input$boundary_file, set_boundary(paste(readLines(input$boundary_file$datapath, warn = FALSE), collapse = "\n")))
+  shiny::observeEvent(input$boundary_file, set_boundary(read_text_utf8(input$boundary_file$datapath)))
   output$boundary_status <- shiny::renderUI({
     if (is.null(rv$boundary)) return(NULL)
     b <- read_boundary(rv$boundary)
     shiny::div(class = "alert alert-secondary py-1", sprintf("Boundary: %d polygon(s); PSU centroids are drawn inside.", length(b)))
   })
   shiny::observeEvent(input$frame_file, {
-    fr <- tryCatch(utils::read.csv(input$frame_file$datapath, stringsAsFactors = FALSE, check.names = FALSE), error = function(e) e)
+    fr <- tryCatch(read_csv_utf8(input$frame_file$datapath), error = function(e) e)   # UTF-8, Windows-1252 or Latin-1
     if (inherits(fr, "error") || !nrow(fr)) {
       rv$frame <- NULL; shiny::showNotification("Could not read the frame CSV.", type = "error")
     } else rv$frame <- fr
@@ -356,7 +360,7 @@ app_server <- function(input, output, session) {
   output$n_total <- shiny::renderUI({
     n <- target_n()
     if (is.na(n)) return(shiny::div(class = "alert alert-warning", "Enter the number of PSUs and interviews per PSU."))
-    shiny::div(class = "alert alert-info", sprintf("Total interviews: %s%s", format(n, big.mark = ","),
+    shiny::div(class = "alert alert-info", sprintf("Total interviews: %s%s", fmt_int(n),
                                                    if (!is.null(rv$frame)) " (from the preload frame)" else ""))
   })
 
@@ -441,21 +445,21 @@ app_server <- function(input, output, session) {
     r <- rv$res
     n <- target_n()
     if (is.null(r)) return(ui_hint(sprintf("Target: %s interviews (tabs 2-3). Large or complex questionnaires can take a few minutes.",
-                                           if (is.na(n)) "?" else format(n, big.mark = ","))))
+                                           if (is.na(n)) "?" else fmt_int(n))))
     msg <- shiny::div(class = "alert alert-success mt-3", sprintf("Generated %d interviews into %d files.", nrow(r$data[[1]]), length(r$data)))
     now <- settings(); now$version <- NULL
     if (!identical(now, rv$run_settings))
       msg <- shiny::tagList(msg, shiny::div(class = "alert alert-warning",
         sprintf("Settings changed since this run (target now %s interviews). Click Generate to apply them.",
-                if (is.na(n)) "?" else format(n, big.mark = ","))))
+                if (is.na(n)) "?" else fmt_int(n))))
     msg
   })
   sm <- shiny::reactive({ shiny::req(rv$res); rv$res$coverage$summary })
   dash <- function(expr) if (is.null(rv$res)) "-" else expr
-  output$vb_n <- shiny::renderText(dash(format(sm()[["interviews"]], big.mark = ",")))
+  output$vb_n <- shiny::renderText(dash(fmt_int(sm()[["interviews"]])))
   output$vb_bc <- shiny::renderText(dash(pct(sm()[["branch_coverage"]])))
   output$vb_oc <- shiny::renderText(dash(pct(sm()[["option_coverage"]])))
-  output$vb_pe <- shiny::renderText(dash(format(nrow(rv$res$paradata), big.mark = ",")))
+  output$vb_pe <- shiny::renderText(dash(fmt_int(nrow(rv$res$paradata))))
   output$tbl_cov <- DT::renderDT({
     shiny::req(rv$res)
     b <- rv$res$coverage$branches
@@ -479,26 +483,27 @@ app_server <- function(input, output, session) {
   })
 
   # ---- 5 export
-  export_to <- function(dir, ts) {
+  export_to <- function(dir) {
     root <- suppressWarnings(write_suso_mock(rv$res, dir, version = input$version, format = input$format %||% "stata",
-                                             timestamp = ts, verbose = FALSE))
-    writeLines(app_r_code(settings(), rv$qname, !is.null(rv$frame)), file.path(root, "reproduce_mock.R"))
-    writeLines(app_do_code(rv$res$questionnaire, input$version, input$format), file.path(root, "load_mock.do"))
+                                             verbose = FALSE))
+    write_lines_utf8(app_r_code(settings(), rv$qname, !is.null(rv$frame)), file.path(root, "reproduce_mock.R"))
+    write_lines_utf8(app_do_code(rv$res$questionnaire, input$version, input$format), file.path(root, "load_mock.do"))
     root
   }
-  dl_ts <- shiny::reactiveVal(Sys.time())
   output$dl_zip <- shiny::downloadHandler(
-    filename = function() { dl_ts(Sys.time())
-      paste0(mock_dir_name(rv$res$questionnaire$varname %||% "suso", input$version %||% 1, dl_ts()), ".zip") },
+    filename = function() paste0(mock_dir_name(rv$res$questionnaire$varname %||% "suso", input$version %||% 1,
+                                               input$format %||% "stata"), ".zip"),
     content = function(file) {
       shiny::req(rv$res)
       td <- tempfile("susosim_"); dir.create(td)
-      root <- export_to(td, dl_ts())
+      root <- tryCatch(export_to(td), error = function(e) {
+        shiny::showNotification(paste("Export failed:", conditionMessage(e)), type = "error", duration = 15); NULL })
+      shiny::req(root)
       zip::zipr(file, root)
     })
   shiny::observeEvent(input$save_btn, {
     if (is.null(rv$res)) { shiny::showNotification("Generate data first (tab 4).", type = "warning"); return() }
-    root <- tryCatch(export_to(input$save_dir, Sys.time()), error = function(e) e)
+    root <- tryCatch(export_to(as_utf8(input$save_dir)), error = function(e) e)
     if (inherits(root, "error")) shiny::showNotification(paste("Save failed:", conditionMessage(root)), type = "error", duration = 10)
     else rv$saved <- root
   })
@@ -507,7 +512,7 @@ app_server <- function(input, output, session) {
     filename = function() "susosimulate_settings.json",
     content = function(file) jsonlite::write_json(settings(), file, auto_unbox = TRUE, pretty = TRUE, null = "null"))
   shiny::observeEvent(input$ul_params, {
-    p <- tryCatch(jsonlite::fromJSON(input$ul_params$datapath, simplifyVector = TRUE), error = function(e) NULL)
+    p <- tryCatch(sanitize_list(jsonlite::fromJSON(read_text_utf8(input$ul_params$datapath), simplifyVector = TRUE)), error = function(e) NULL)
     if (is.null(p) || is.null(p$design) || is.null(p$config)) { shiny::showNotification("Not a SuSoSimulate settings file.", type = "error"); return() }
     d <- p$design; cf <- p$config
     upd_num <- function(id, v) if (!is.null(v)) shiny::updateNumericInput(session, id, value = v)
@@ -531,9 +536,9 @@ app_server <- function(input, output, session) {
     shiny::showNotification("Settings loaded.", type = "message")
   })
   output$dl_r <- shiny::downloadHandler(filename = function() "reproduce_mock.R",
-    content = function(file) writeLines(app_r_code(settings(), rv$qname, !is.null(rv$frame)), file))
+    content = function(file) write_lines_utf8(app_r_code(settings(), rv$qname, !is.null(rv$frame)), file))
   output$dl_do <- shiny::downloadHandler(filename = function() "load_mock.do",
-    content = function(file) { shiny::req(rv$qn); writeLines(app_do_code(rv$qn, input$version, input$format), file) })
+    content = function(file) { shiny::req(rv$qn); write_lines_utf8(app_do_code(rv$qn, input$version, input$format), file) })
   output$code_r <- shiny::renderText(paste(app_r_code(settings(), rv$qname, !is.null(rv$frame)), collapse = "\n"))
   output$code_do <- shiny::renderText({ shiny::req(rv$qn); paste(app_do_code(rv$qn, input$version, input$format), collapse = "\n") })
 }
@@ -568,7 +573,7 @@ app_r_code <- function(s, qname = NULL, has_frame = FALSE) {
     paste0(arg(dd), ",\n    start_date = as.Date(\"", d$start_date, "\")),"),
     "  config = suso_mock_config(",
     paste0(arg(cf), "),"),
-    sprintf('  out_dir = ".", version = %s, seed = %s)   # writes <Q>_SuSoMock_<timestamp>/', fmt_num(s$version %||% 1), fmt_num(s$seed %||% 1)),
+    sprintf('  out_dir = ".", version = %s, seed = %s)   # writes <Q>_<version>_SuSoMock_STATA/ (or _Tabular/)', fmt_num(s$version %||% 1), fmt_num(s$seed %||% 1)),
     "", "res                         # coverage summary", "res$coverage$branches       # per-condition detail")
 }
 
@@ -581,7 +586,7 @@ app_do_code <- function(qn, version = 1, format = "stata") {
                      paste0("foreach f in ", paste(files, collapse = " "), " {"),
                      '    quietly do "$mock/`f\'.do"', '    save "$mock/`f\'.dta", replace', "}", "")
   out <- c(sprintf("* Load and merge SuSoSimulate output (same layout as a Survey Solutions %s export)", if (tab) "Tabular" else "Stata"),
-           sprintf("* cd into the %s_SuSoMock_<timestamp> folder, then run.", stem),
+           sprintf("* cd into the %s_SuSoMock_%s folder, then run.", stem, if (tab) "Tabular" else "STATA"),
            sprintf('global mock "%s_%s_All"', stem, if (tab) "Tabular" else "STATA"), "", conv,
            sprintf('use "$mock/%s.dta", clear', main), "describe, short", "tab interview__status", "")
   lv <- qn$levels[setdiff(names(qn$levels), "main")]

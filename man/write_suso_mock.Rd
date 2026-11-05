@@ -10,7 +10,6 @@ write_suso_mock(
   version = x$version,
   format = x$format \%||\% "stata",
   zip = TRUE,
-  timestamp = Sys.time(),
   verbose = TRUE
 )
 }
@@ -25,15 +24,13 @@ write_suso_mock(
 
 \item{zip}{Also create the HQ-style zip archives.}
 
-\item{timestamp}{Time used in the export folder name.}
-
 \item{verbose}{Print progress.}
 }
 \value{
 The export folder path, invisibly.
 }
 \description{
-Creates `<out_dir>/<Q>_SuSoMock_<timestamp>/` containing
+Creates `<out_dir>/<Q>_<version>_SuSoMock_STATA/` (or `..._Tabular/`) containing
 `<Q>_<version>_STATA_All` and `<Q>_<version>_Paradata_All` (folders and, with
 `zip = TRUE`, the matching `.zip` archives with files at the archive root,
 as HQ produces them), plus coverage reports, the sample frame and settings.

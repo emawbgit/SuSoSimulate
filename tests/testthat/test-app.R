@@ -19,7 +19,7 @@ test_that("Shiny app: full workflow on the demo questionnaire", {
     expect_equal(output$vb_n, "6")
     z <- output$dl_zip
     files <- zip::zip_list(z)$filename
-    expect_true(any(grepl("^demo_hh_1_SuSoMock_\\d{8}_\\d{6}/demo_hh_1_STATA_All\\.zip$", files)))
+    expect_true(any(grepl("^demo_hh_1_SuSoMock_STATA/demo_hh_1_STATA_All\\.zip$", files)))
     expect_true(any(grepl("demo_hh_1_STATA_All/demo_hh.dta$", files)))
     expect_true(any(grepl("paradata.tab$", files)))
     expect_true(any(grepl("reproduce_mock.R$", files)))

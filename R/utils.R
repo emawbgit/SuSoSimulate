@@ -39,6 +39,17 @@ stata_label <- function(x, n = 80) {
 }
 
 # Tabular .do labels: HTML tags and line breaks removed, apostrophes dropped, no length cap
+# 75 -> "1m 15s", 4.2 -> "4s"
+fmt_secs <- function(x) {
+  if (!length(x) || is.na(x) || !is.finite(x)) return("?")
+  x <- max(0, round(x))
+  if (x < 60) sprintf("%ds", x) else if (x < 3600) sprintf("%dm %02ds", x %/% 60, x %% 60)
+  else sprintf("%dh %02dm", x %/% 3600, (x %% 3600) %/% 60)
+}
+
+# thousands separator independent of options(OutDec) (",": French/Spanish set-ups)
+fmt_int <- function(n) formatC(round(as.numeric(n)), format = "d", big.mark = ",", decimal.mark = ".")
+
 tab_label <- function(x) gsub("'", "", gsub("[\r\n]+", "", gsub("<[^>]+>", "", x %||% "")), fixed = TRUE)
 
 # Option code -> SuSo multi-select column suffix (negative codes become n<abs>)

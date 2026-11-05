@@ -84,7 +84,7 @@ suso_validate_mock <- function(x) {
   iv <- qn$interviewer_var
   if (!is.null(iv) && !is.null(m[[iv]])) {
     ivn <- env_get(qn$by_name, iv)
-    lab <- if (ivn$qtype == "single") gsub("[^A-Za-z0-9_.-]", "", strip_html(ivn$options$label[match(as.numeric(m[[iv]]), ivn$options$code)]))
+    lab <- if (ivn$qtype == "single") safe_login(ivn$options$label[match(as.numeric(m[[iv]]), ivn$options$code)])
            else as.character(m[[iv]])
     chk(sprintf("interviewer question %s = interviewer login", iv), ids[!is.na(lab) & lab != ints[ids]])
   }

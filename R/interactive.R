@@ -17,7 +17,7 @@ suso_mock_interactive <- function(answers = list()) {
     if (!is.null(answers[[key]])) return(as.character(answers[[key]]))
     if (!interactive()) return(as.character(default))
     x <- readline(sprintf("%s [%s] (default: %s): ", prompt, key, default))
-    if (nzchar(trimws(x))) trimws(x) else as.character(default)
+    if (nzchar(trimws(x))) as_utf8(trimws(x)) else as.character(default)
   }
   num <- function(key, prompt, default) {
     v <- suppressWarnings(as.numeric(ask(key, prompt, default)))
@@ -48,7 +48,7 @@ suso_mock_interactive <- function(answers = list()) {
   psu_var <- pick_var("psu_var", "Variable receiving the PSU id (blank = none)")
   ssu_var <- pick_var("ssu_var", "Variable receiving the household/SSU id (blank = none)")
   frame_path <- ask("frame", "Optional preload frame CSV (one row per interview; blank = none)", "")
-  frame <- if (nzchar(frame_path)) utils::read.csv(frame_path, stringsAsFactors = FALSE) else NULL
+  frame <- if (nzchar(frame_path)) read_csv_utf8(frame_path) else NULL
 
   cat("\n-- Roster dimensions --\n")
   trig <- qn_questions(qn, function(n) isTRUE(n$is_trigger) && n$qtype %in% c("numeric", "list"))
@@ -76,7 +76,7 @@ suso_mock_interactive <- function(answers = list()) {
   budget <- if (rep) num("repair_budget", "Max candidate interviews for repair", 400) else 0
   seed <- num("seed", "Random seed", 12345)
   ver <- num("version", "Questionnaire version number for the export names", if (is.na(qn$hq_version)) 1 else qn$hq_version)
-  out <- ask("out_dir", "Folder where <Q>_SuSoMock_<timestamp> is created", ".")
+  out <- ask("out_dir", "Folder where <Q>_<version>_SuSoMock_<format> is created", ".")
   zip <- yn("zip", "Also create HQ-style zip archives? (y/n)", "y")
   fmt <- tolower(ask("format", "Export format: stata or tabular", "stata"))
   if (!fmt %in% c("stata", "tabular")) { cat("Unknown format, using stata.\n"); fmt <- "stata" }

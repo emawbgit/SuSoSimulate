@@ -14,19 +14,37 @@
 .words <- c("field", "market", "water", "school", "road", "harvest", "rain", "seed", "cattle",
   "village", "season", "price", "store", "clinic", "loan", "family", "work", "land", "river", "town")
 
-gen_name <- function() paste(sample(.first_names, 1), sample(.last_names, 1))
+# word pools in the questionnaire's language (English upper-case, as most HQ data; FR/ES with accents)
+pool <- function(lang) {
+  p <- .text_pools[[lang %||% "en"]]
+  if (is.null(p)) list(first = .first_names, last = .last_names, words = .words, dir = c("A", "B", "CENTRAL", "EAST", "WEST"), up = TRUE)
+  else c(p, up = FALSE)
+}
+gen_name <- function(lang = "en") { p <- pool(lang); x <- paste(sample(p$first, 1), sample(p$last, 1)); if (p$up) toupper(x) else x }
 
-gen_text <- function(node) {
+# keyword heuristics run on accent-folded, lower-case variable name + question text (EN/FR/ES/PT)
+.kw <- list(
+  phone = "phone|\\btel\\b|telephone|telefone|telefono|mobile|celular|portable|movil",
+  email = "e-?mail|courriel|correo",
+  barcode = "barcode|serial|\\bqr\\b|code.?barre|codigo de barras",
+  code = "code|codigo|\\bid\\b|_id\\b|number|numero|\\bno\\b|\\bnum\\b|identifiant|matricule",
+  place = paste0("village|parish|ward|town|locality|community|region|district|county|province|state|\\bea\\b|^ea_|site|station|place|",
+                 "location|school|facility|commune|departement|prefecture|quartier|ville|localite|municipio|provincia|distrito|",
+                 "comunidad|localidad|barrio|canton|zone|zd\\b|ecole|escuela|centre de sante|aldea|vereda|corregimiento"),
+  name = "name|nome|\\bnom\\b|prenom|nombre|apellido|respondent|repondant|encuestado|entrevistado|\\bhead\\b|chef",
+  person = "member|name|person|child|people|household|membre|enfant|personne|menage|miembro|nino|persona|hogar|hijo")
+
+gen_text <- function(node, lang = "en") {
   if (nzchar(node$mask %||% "")) return(gen_masked(node$mask))
-  nm <- tolower(paste(node$varname, node$text))
-  if (grepl("phone|tel\\b|mobile", nm)) return(paste0("07", paste(sample(0:9, 8, TRUE), collapse = "")))
-  if (grepl("e-?mail", nm)) return(paste0(tolower(sample(.first_names, 1)), sample(10:99, 1), "@example.org"))
-  if (grepl("barcode|serial|qr\\b", nm)) return(paste(sample(c(LETTERS, 0:9), 10, TRUE), collapse = ""))
-  if (grepl("code|\\bid\\b|_id\\b|number|\\bno\\b", nm)) return(sprintf("%04d", sample(1:9999, 1)))
-  place <- "village|parish|ward|town|locality|community|region|district|county|province|state|\\bea\\b|^ea_|site|station|place|location|school|facility"
-  if (grepl(place, nm)) return(toupper(paste(sample(.last_names, 1), sample(c("A", "B", "CENTRAL", "EAST", "WEST"), 1))))
-  if (grepl("name|nome|nom\\b|respondent|head", nm)) return(toupper(gen_name()))
-  paste(sample(.words, sample(2:5, 1), TRUE), collapse = " ")
+  nm <- node$fold %||% fold(paste(node$varname, node$text))
+  p <- pool(lang)
+  if (grepl(.kw$phone, nm)) return(paste0("07", paste(sample(0:9, 8, TRUE), collapse = "")))
+  if (grepl(.kw$email, nm)) return(paste0(fold(sample(p$first, 1)), sample(10:99, 1), "@example.org"))
+  if (grepl(.kw$barcode, nm)) return(paste(sample(c(LETTERS, 0:9), 10, TRUE), collapse = ""))
+  if (grepl(.kw$code, nm)) return(sprintf("%04d", sample(1:9999, 1)))
+  if (grepl(.kw$place, nm)) { x <- paste(sample(p$last, 1), sample(p$dir, 1)); return(if (p$up) toupper(x) else x) }
+  if (grepl(.kw$name, nm)) return(gen_name(lang))
+  paste(sample(p$words, sample(2:5, 1), TRUE), collapse = " ")
 }
 
 # SuSo masks: '#' digit, '~' letter, '*' any alphanumeric; other chars literal
@@ -121,24 +139,24 @@ gen_numeric <- function(G, node, rv) {
     cand <- cand[(is.na(lo) | cand >= lo) & (is.na(hi) | cand <= hi)]
     if (length(cand)) return(finish_num(pick(cand), node))
   }
-  nm <- tolower(node$varname)
+  nm <- node$fold %||% fold(node$varname)
   x <- if (!is.na(lo) && !is.na(hi)) {
     if (int && (hi - lo) < 1e6) lo + sample.int(floor(hi - lo) + 1, 1) - 1
     else if (hi - lo > 1000 && lo >= 0) min(hi, lo + stats::rlnorm(1, log(max(10, (hi - lo) / 1e4)), 1.2))
     else stats::runif(1, lo, hi)
   } else {
-    base <- if (grepl("age", nm)) sample(0:90, 1)
-      else if (grepl("year|yr", nm)) sample(1960:2025, 1)
-      else if (grepl("price|cost|amount|income|value|exp|wage|pay|ugx|kes|usd", nm)) stats::rlnorm(1, log(5000), 1.2)
-      else if (grepl("area|acre|ha$|hect", nm)) stats::rlnorm(1, log(1.5), 0.8)
-      else if (grepl("size|members|num|nb|count|n_|qty|quant", nm)) stats::rpois(1, 3) + 1
+    base <- if (grepl("\\bage\\b|^age|_age|age_|edad|idade", nm)) sample(0:90, 1)
+      else if (grepl("year|yr|annee|\\bano\\b|anio", nm)) sample(1960:2025, 1)
+      else if (grepl("price|cost|amount|income|value|exp|wage|pay|ugx|kes|usd|prix|cout|montant|revenu|salaire|precio|costo|monto|ingreso|salario|fcfa|xof|cfa|eur", nm)) stats::rlnorm(1, log(5000), 1.2)
+      else if (grepl("area|acre|ha$|hect|superficie|surface", nm)) stats::rlnorm(1, log(1.5), 0.8)
+      else if (grepl("size|members|num|nb|count|n_|qty|quant|nombre de|combien|cuant|cantidad|taille", nm)) stats::rpois(1, 3) + 1
       else stats::rlnorm(1, log(20), 1)
     if (!is.na(lo)) base <- max(lo, base)
     if (!is.na(hi)) base <- min(hi, base)
     base
   }
   # decimal questions about years, ages, counts, durations are answered in whole numbers in practice
-  if (!int && grepl("year|\\byrs?\\b|\\bage\\b|day|month|number of|count|how many|minute|hour|times", tolower(paste(node$varname, strip_html(node$text)))))
+  if (!int && grepl("year|\\byrs?\\b|\\bage\\b|day|month|number of|count|how many|minute|hour|times|annee|\\bans?\\b|jour|mois|nombre de|combien|heure|fois|\\bano|edad|dia|mes\\b|numero de|cuant|hora|veces", nm))
     x <- round(x)
   finish_num(x, node)
 }
@@ -157,7 +175,11 @@ steer_p <- function(G, node) if (node$varname %in% G$tune$focus) 0.6 else if (!i
 
 gen_value <- function(G, node, rv) {
   user <- G$cfg$generators[[node$varname]]
-  if (is.function(user)) return(coerce_preload(node, user(rv = rv, unit = G$st$unit)))
+  if (is.function(user)) {                 # user generators: any encoding or error is contained here
+    v <- tryCatch(user(rv = rv, unit = G$st$unit), error = function(e) {
+      note_issue(G, node, "generator", conditionMessage(e)); NULL })
+    return(if (is.null(v)) NULL else coerce_preload(node, v))
+  }
   switch(node$qtype,
     numeric = gen_numeric(G, node, rv),
     single = {
@@ -199,7 +221,7 @@ gen_value <- function(G, node, rv) {
       }
       sus_multi(pick)
     },
-    text = gen_text(node),
+    text = gen_text(node, G$qn$lang),
     barcode = paste(sample(0:9, 13, TRUE), collapse = ""),
     picture = paste0(substr(new_guid(), 1, 12), ".jpg"),
     audio = paste0(substr(new_guid(), 1, 12), ".m4a"),
@@ -207,8 +229,8 @@ gen_value <- function(G, node, rv) {
     date = {
       if (isTRUE(node$is_timestamp)) return(G$st$now)
       d0 <- as.Date(G$st$unit$start_time)
-      nm <- tolower(paste(node$varname, node$text))
-      if (grepl("birth|dob|born", nm)) d0 - sample(365:(80 * 365), 1) else d0 - sample(0:540, 1)
+      nm <- node$fold %||% fold(paste(node$varname, node$text))
+      if (grepl("birth|dob|born|naissance|nacimiento|nascimento", nm)) d0 - sample(365:(80 * 365), 1) else d0 - sample(0:540, 1)
     },
     gps = {
       a <- gps_anchor(G)   # GPS answers of one interview cluster around the dwelling (~20 m) ...
@@ -220,9 +242,10 @@ gen_value <- function(G, node, rv) {
       cap <- if (is.na(node$max_answers)) 40 else node$max_answers
       n <- if (isTRUE(node$is_trigger)) gen_count(G, node, 1, cap) else min(cap, sample(1:4, 1))
       if (n <= 0) return(NULL)
-      nm <- tolower(paste(node$varname, node$text))
-      tx <- if (grepl("member|name|person|child|people|household", nm)) toupper(replicate(n, gen_name()))
-            else toupper(replicate(n, paste(sample(.words, 2), collapse = " ")))
+      nm <- node$fold %||% fold(paste(node$varname, node$text))
+      p <- pool(G$qn$lang)
+      tx <- if (grepl(.kw$person, nm)) replicate(n, gen_name(G$qn$lang))
+            else replicate(n, { x <- paste(sample(p$words, 2), collapse = " "); if (p$up) toupper(x) else x })
       sus_textlist(seq_len(n), tx)
     },
     NULL)
@@ -257,10 +280,29 @@ sus_area <- function(lonlat, xy, geom = 0L, auto = FALSE) {
   closed <- rbind(xy, xy[1, ])
   area <- if (geom == 0L && n > 2) abs(sum(xy[, 1] * xy[c(2:n, 1), 2] - xy[c(2:n, 1), 1] * xy[, 2])) / 2 else 0
   len <- if (geom == 0L && n > 2) seg(closed) else if (geom == 1L) seg(xy) else 0
-  structure(list(coords = lonlat, area = area, len = len, num = n,
+  structure(list(coords = lonlat, area = area, len = len, num = n, geom = as.integer(geom),
                  racc = if (auto) 10 else NA_real_, rfrq = if (auto) 5 else NA_real_), class = "sus_area")
 }
-area_string <- function(v) paste(sprintf("%.15g,%.15g", v$coords[, 1], v$coords[, 2]), collapse = ";")
+# Geography export formats (HQ workspace setting): "geometry_string" lon,lat;lon,lat;...,
+# "wkt" (no line breaks; polygons closed, written as POLYGON) or "geojson"
+area_string <- function(v, fmt = "geometry_string") {
+  xy <- v$coords; g <- v$geom %||% 0L
+  num <- function(x) trimws(formatC(x, digits = 15, format = "fg", flag = ""))
+  if (fmt == "geometry_string") return(paste(paste0(num(xy[, 1]), ",", num(xy[, 2])), collapse = ";"))
+  if (g == 0L) xy <- rbind(xy, xy[1, , drop = FALSE])                        # close the ring
+  pts <- paste(num(xy[, 1]), num(xy[, 2]))
+  if (fmt == "wkt") return(switch(as.character(g),
+    "1" = sprintf("LINESTRING (%s)", paste(pts, collapse = ", ")),
+    "2" = sprintf("POINT (%s)", pts[1]),
+    "3" = sprintf("MULTIPOINT (%s)", paste0("(", pts, ")", collapse = ", ")),
+    sprintf("POLYGON ((%s))", paste(pts, collapse = ", "))))
+  arr <- paste0("[", num(xy[, 1]), ",", num(xy[, 2]), "]")
+  switch(as.character(g),
+    "1" = sprintf('{"type":"LineString","coordinates":[%s]}', paste(arr, collapse = ",")),
+    "2" = sprintf('{"type":"Point","coordinates":%s}', arr[1]),
+    "3" = sprintf('{"type":"MultiPoint","coordinates":[%s]}', paste(arr, collapse = ",")),
+    sprintf('{"type":"Polygon","coordinates":[[%s]]}', paste(arr, collapse = ",")))
+}
 
 # Generate, then re-draw until hard validations pass (or inject an error)
 gen_valid <- function(G, node, rv) {
