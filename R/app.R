@@ -61,9 +61,9 @@ app_ui <- function() {
       bslib::layout_sidebar(
         sidebar = bslib::sidebar(width = 340,
           shiny::h5("Load a questionnaire"),
-          shiny::fileInput("qfile", NULL, accept = c(".json", ".zip", ".pdf"),
-                           placeholder = "document.json, HQ export .zip, .pdf"),
-          ui_hint("Any Headquarters export zip works: the questionnaire and its categories are embedded in it. PDF input is experimental."),
+          shiny::fileInput("qfile", NULL, accept = c(".json", ".zip", ".pdf", ".xlsx", ".tsv", ".txt"), multiple = TRUE,
+                           placeholder = "HQ export .zip, content.zip, document.json (+ category files)"),
+          ui_hint("Best: any Headquarters export zip, or Questionnaire/content.zip from one (exact questionnaire + categories). You can also select document.json together with the category files. PDF input is experimental and loses detail."),
           shiny::actionButton("use_demo", "Use the demo questionnaire", class = "btn-outline-secondary w-100"),
           shiny::hr(),
           shiny::uiOutput("q_status")),
@@ -118,6 +118,7 @@ app_ui <- function() {
           shiny::sliderInput("target_prob", "Branch steering strength", 0, 1, 0.5, step = 0.05),
           bslib::input_switch("coverage_repair", "Repair coverage (every reachable branch)", TRUE),
           num("repair_budget", "Repair budget (candidate interviews)", 400, 0),
+          num("repair_time", "Repair time limit (seconds)", 120, 0),
           bslib::input_switch("allow_augment", "Append (rather than replace) repair interviews", FALSE),
           shiny::h6("Final interview status shares"),
           bslib::layout_column_wrap(width = 1 / 3, fill = FALSE,
@@ -195,7 +196,13 @@ app_server <- function(input, output, session) {
     if (!is.na(qn$hq_version)) shiny::updateNumericInput(session, "version", value = qn$hq_version)
     shiny::showNotification(sprintf("Loaded '%s'", qn$title), type = "message")
   }
-  shiny::observeEvent(input$qfile, load_q(input$qfile$datapath, input$qfile$name))
+  shiny::observeEvent(input$qfile, {
+    f <- input$qfile
+    if (length(f$datapath) == 1) return(load_q(f$datapath, f$name))
+    td <- tempfile("q_upload_"); dir.create(td)          # document.json + Categories files -> one folder
+    file.copy(f$datapath, file.path(td, f$name))
+    load_q(td, paste(f$name, collapse = ", "))
+  })
   shiny::observeEvent(input$use_demo, load_q(system.file("extdata", "demo_household.json", package = "SuSoSimulate"),
                                              "demo_household.json"))
 
@@ -313,7 +320,7 @@ app_server <- function(input, output, session) {
       config = list(item_nonresponse = input$item_nonresponse, error_rate = input$error_rate,
                     special_value_rate = input$special_value_rate, target_prob = input$target_prob,
                     roster_mean = input$roster_mean, roster_sizes = rs, status_mix = sm, tz_offset = input$tz_offset,
-                    coverage_repair = isTRUE(input$coverage_repair), repair_budget = input$repair_budget,
+                    coverage_repair = isTRUE(input$coverage_repair), repair_budget = input$repair_budget, repair_time = input$repair_time %||% 120,
                     allow_augment = isTRUE(input$allow_augment)),
       seed = input$seed, version = input$version)
   })
@@ -423,7 +430,7 @@ app_server <- function(input, output, session) {
     if (!is.null(d$assignment_per)) shiny::updateSelectInput(session, "assignment_per", selected = d$assignment_per)
     for (v in c("item_nonresponse", "error_rate", "special_value_rate", "target_prob"))
       if (!is.null(cf[[v]])) shiny::updateSliderInput(session, v, value = cf[[v]])
-    upd_num("roster_mean", cf$roster_mean); upd_num("repair_budget", cf$repair_budget); upd_num("seed", p$seed); upd_num("version", p$version)
+    upd_num("roster_mean", cf$roster_mean); upd_num("repair_budget", cf$repair_budget); upd_num("repair_time", cf$repair_time); upd_num("seed", p$seed); upd_num("version", p$version)
     if (!is.null(cf$tz_offset)) shiny::updateTextInput(session, "tz_offset", value = cf$tz_offset)
     if (!is.null(cf$coverage_repair)) bslib::update_switch("coverage_repair", value = isTRUE(cf$coverage_repair), session = session)
     if (!is.null(cf$allow_augment)) bslib::update_switch("allow_augment", value = isTRUE(cf$allow_augment), session = session)

@@ -19,10 +19,13 @@ gen_name <- function() paste(sample(.first_names, 1), sample(.last_names, 1))
 gen_text <- function(node) {
   if (nzchar(node$mask %||% "")) return(gen_masked(node$mask))
   nm <- tolower(paste(node$varname, node$text))
-  if (grepl("name|nome|nom\\b|respondent|head", nm)) return(toupper(gen_name()))
-  if (grepl("phone|tel|mobile", nm)) return(paste0("07", paste(sample(0:9, 8, TRUE), collapse = "")))
+  if (grepl("phone|tel\\b|mobile", nm)) return(paste0("07", paste(sample(0:9, 8, TRUE), collapse = "")))
   if (grepl("e-?mail", nm)) return(paste0(tolower(sample(.first_names, 1)), sample(10:99, 1), "@example.org"))
-  if (grepl("village|parish|ward|town|locality|community", nm)) return(toupper(paste(sample(.last_names, 1), sample(c("A", "B", "CENTRAL", "EAST", "WEST"), 1))))
+  if (grepl("barcode|serial|qr\\b", nm)) return(paste(sample(c(LETTERS, 0:9), 10, TRUE), collapse = ""))
+  if (grepl("code|\\bid\\b|_id\\b|number|\\bno\\b", nm)) return(sprintf("%04d", sample(1:9999, 1)))
+  place <- "village|parish|ward|town|locality|community|region|district|county|province|state|\\bea\\b|^ea_|site|station|place|location|school|facility"
+  if (grepl(place, nm)) return(toupper(paste(sample(.last_names, 1), sample(c("A", "B", "CENTRAL", "EAST", "WEST"), 1))))
+  if (grepl("name|nome|nom\\b|respondent|head", nm)) return(toupper(gen_name()))
   paste(sample(.words, sample(2:5, 1), TRUE), collapse = " ")
 }
 
@@ -146,13 +149,16 @@ finish_num <- function(x, node) {
   round(x, if (is.na(d)) 2 else d)
 }
 
+# repair steering: 0.6 for variables in the uncovered condition, 0.9 for the gates leading to it
+steer_p <- function(G, node) if (node$varname %in% G$tune$focus) 0.6 else if (!isTRUE(node$is_trigger) && node$varname %in% G$tune$enable) 0.9 else 0
+
 gen_value <- function(G, node, rv) {
   user <- G$cfg$generators[[node$varname]]
   if (is.function(user)) return(coerce_preload(node, user(rv = rv, unit = G$st$unit)))
   switch(node$qtype,
     numeric = gen_numeric(G, node, rv),
     single = {
-      if (node$varname %in% G$tune$focus && length(node$targets) && is.null(node$lnk) && stats::runif(1) < 0.6) {
+      if (length(node$targets) && is.null(node$lnk) && stats::runif(1) < steer_p(G, node)) {
         o <- available_options(G, node, rv); tc <- intersect(node$targets, o$code)
         if (length(tc)) return(pick(tc))
       }
@@ -184,7 +190,7 @@ gen_value <- function(G, node, rv) {
       k <- if (isTRUE(node$is_trigger)) gen_count(G, node, 1, m) else min(m, 1 + stats::rgeom(1, 0.55))
       pick <- choose_codes(G, node, o$code, k)
       tc <- intersect(node$targets, o$code)
-      if (node$varname %in% G$tune$focus && length(tc) && stats::runif(1) < 0.6) {
+      if (length(tc) && stats::runif(1) < steer_p(G, node)) {
         t1 <- pick(tc)
         if (!(t1 %in% pick)) pick[length(pick)] <- t1
       }

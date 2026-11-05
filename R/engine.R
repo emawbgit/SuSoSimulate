@@ -18,6 +18,9 @@ new_state <- function(unit) {
   st$unit <- unit
   st$now <- unit$start_time
   st$changed <- FALSE
+  st$vv <- new.env(hash = TRUE)        # per-variable change counter ("__rows__" for roster rows); keys the memo
+  st$memo <- new.env(hash = TRUE)      # "node|rv" -> c(signature, result)
+  st$off <- new.env(hash = TRUE)       # disabled groups / rows whose subtree is already cleared
   st
 }
 
@@ -61,7 +64,14 @@ eval_value <- function(G, cc, node, rv) {
 eval_cond <- function(G, node, rv) {
   cc <- node$enc
   if (is.null(cc)) return(TRUE)
-  res <- eval_bool(G, cc, node, rv, fkey = paste0(node$id, "|", rv_str(rv)))
+  fkey <- paste0(node$id, "|", rv_str(rv))
+  # same state as at the last evaluation -> same result (skipped for clock-dependent conditions)
+  sig <- sum(unlist(mget(node$memo_refs, envir = G$st$vv, ifnotfound = 0L), use.names = FALSE))
+  m <- get0(fkey, envir = G$st$memo, inherits = FALSE)
+  if (!is.null(m) && m[1] == sig) res <- as.logical(m[2]) else {
+    res <- eval_bool(G, cc, node, rv, fkey = fkey)
+    if (!isTRUE(node$clock_dep)) assign(fkey, c(sig, res), envir = G$st$memo)
+  }
   if (G$rec) {
     k <- paste0(node$id, if (res) ":T" else ":F")
     assign(k, (env_get(G$st$hits, k) %||% 0) + 1, envir = G$st$hits)
@@ -80,12 +90,23 @@ validate <- function(G, node, rv, errors_only = FALSE) {
   out
 }
 
-set_changed <- function(G) G$st$changed <- TRUE
+set_changed <- function(G, key = NULL) { G$st$changed <- TRUE; bump(G, key) }
+bump <- function(G, key) {                # key "var|rv" -> var; NULL -> roster rows
+  v <- if (is.null(key)) "__rows__" else sub("\\|.*$", "", key)
+  assign(v, (get0(v, envir = G$st$vv, inherits = FALSE) %||% 0L) + 1L, envir = G$st$vv)
+}
+
+# clear a disabled group / roster row once; nothing can be answered inside it until it is enabled again
+clear_off <- function(G, node, rv) {
+  k <- st_key(node$id, rv)
+  if (is.null(get0(k, envir = G$st$off, inherits = FALSE))) { clear_children(G, node, rv); assign(k, TRUE, envir = G$st$off) }
+}
+set_on <- function(G, node, rv) env_rm(G$st$off, st_key(node$id, rv))
 
 clear_value <- function(G, node, rv) {
   key <- st_key(node$varname, rv)
   if (is.null(get0(key, envir = G$st$enabled, inherits = FALSE))) return(invisible())
-  rm(list = key, envir = G$st$enabled); set_changed(G)
+  rm(list = key, envir = G$st$enabled); set_changed(G, key)
   env_rm(G$st$vals, key); env_rm(G$st$decided, key)
 }
 
@@ -105,8 +126,8 @@ walk_nodes <- function(G, ids, rv) {
   for (id in ids) {
     node <- G$qn$nodes[[id]]
     switch(node$kind,
-      group = if (eval_cond(G, node, rv)) walk_nodes(G, node$children, rv) else {
-        clear_children(G, node, rv)
+      group = if (eval_cond(G, node, rv)) { set_on(G, node, rv); walk_nodes(G, node$children, rv) } else {
+        clear_off(G, node, rv)
         if (G$rec) log_disabled_vars(G, node, rv)
       },
       roster = walk_roster(G, node, rv),
@@ -137,12 +158,13 @@ walk_roster <- function(G, node, rv) {
   codes <- roster_codes(G, node, rv)
   old <- env_get(G$st$rows, rk)
   if (!identical(old, codes)) {
-    assign(rk, codes, envir = G$st$rows); set_changed(G)
-    for (cd in setdiff(old, codes)) clear_children(G, node, c(rv, cd))
+    assign(rk, codes, envir = G$st$rows); set_changed(G)            # NULL key: rows
+    for (cd in setdiff(old, codes)) { clear_children(G, node, c(rv, cd)); set_on(G, node, c(rv, cd)) }
   }
   for (cd in codes) {
     rv2 <- c(rv, cd)
     if (eval_cond(G, node, rv2)) {
+      set_on(G, node, rv2)
       if (G$rec) {
         er <- env_get(G$st$export_rows, lk)
         if (is.null(er)) { er <- new.env(); assign(lk, er, envir = G$st$export_rows) }
@@ -150,7 +172,7 @@ walk_roster <- function(G, node, rv) {
       }
       walk_nodes(G, node$children, rv2)
     } else {
-      clear_children(G, node, rv2)
+      clear_off(G, node, rv2)
       if (G$rec) log_disabled_vars(G, node, rv2)
     }
   }
@@ -169,9 +191,9 @@ walk_question <- function(G, node, rv) {
   st <- G$st; cfg <- G$cfg
   key <- st_key(node$varname, rv)
   if (!eval_cond(G, node, rv)) { clear_value(G, node, rv); return(invisible()) }
-  if (!env_has(st$enabled, key)) { assign(key, TRUE, envir = st$enabled); set_changed(G) }
+  if (!env_has(st$enabled, key)) { assign(key, TRUE, envir = st$enabled); set_changed(G, key) }
   if (env_has(st$decided, key)) {
-    if (!G$rec && !still_valid(G, node, rv)) { env_rm(st$decided, key); env_rm(st$vals, key) }
+    if (!G$rec && !still_valid(G, node, rv)) { env_rm(st$decided, key); env_rm(st$vals, key); bump(G, key) }
     else { if (G$rec) record_question(G, node, rv, key); return(invisible()) }
   }
   assign(key, TRUE, envir = st$decided)
@@ -181,14 +203,14 @@ walk_question <- function(G, node, rv) {
           (node$scope %in% c(1L, 2L) && stats::runif(1) >= cfg$supervisor_answer_rate) ||
           (!isTRUE(node$featured) && !isTRUE(node$is_trigger) && stats::runif(1) < cfg$item_nonresponse) ||
           # questions tested with `== null` / IsAnswered(): leave some unanswered so both paths occur
-          (isTRUE(node$null_target) && !isTRUE(node$featured) &&
+          (isTRUE(node$null_target) && !isTRUE(node$featured) && !(node$varname %in% G$tune$enable) &&
            stats::runif(1) < (if (node$varname %in% G$tune$focus) 0.5 else G$tune$target_prob * cfg$null_share))
   if (!is.null(pre) && length(rv) == 0) {
     val <- coerce_preload(node, pre)
   } else if (!skip) {
     val <- gen_valid(G, node, rv)
   }
-  if (!is.null(val)) { assign(key, val, envir = st$vals); set_changed(G) } else env_rm(st$vals, key)
+  if (!is.null(val)) { assign(key, val, envir = st$vals); set_changed(G, key) } else { env_rm(st$vals, key); bump(G, key) }
   if (G$rec) record_question(G, node, rv, key)
 }
 
@@ -213,8 +235,8 @@ record_question <- function(G, node, rv, key) {
   v <- env_get(st$vals, key)
   if (is.null(v) || !answered(v)) { st$n_unanswered <- st$n_unanswered + 1L; return(invisible()) }
   st$clock <- st$clock + answer_seconds(node)
-  if (isTRUE(node$is_timestamp)) { v <- st$clock; assign(key, v, envir = st$vals) }
-  if (node$qtype == "gps") { v$Timestamp <- st$clock; assign(key, v, envir = st$vals) }
+  if (isTRUE(node$is_timestamp)) { v <- st$clock; assign(key, v, envir = st$vals); bump(G, key) }
+  if (node$qtype == "gps") { v$Timestamp <- st$clock; assign(key, v, envir = st$vals); bump(G, key) }
   log_add(st$alog, list(id = node$id, rv = rv, t = st$clock, kind = "answer"))
   if (node$qtype %in% c("single", "multi") && is.null(node$lnk)) {
     cds <- if (inherits(v, "sus_yesno")) v$yes else codes_of(v)
@@ -228,7 +250,7 @@ walk_variable <- function(G, node, rv) {
   key <- st_key(node$varname, rv)
   val <- coerce_variable(eval_value(G, node$exprc, node, rv), node$vtype)
   old <- env_get(G$st$vals, key)
-  if (!identical(old, val)) { assign(key, val, envir = G$st$vals); set_changed(G) }
+  if (!identical(old, val)) { assign(key, val, envir = G$st$vals); set_changed(G, key) }
   if (!env_has(G$st$enabled, key)) assign(key, TRUE, envir = G$st$enabled)
   if (G$rec) log_add(G$st$alog, list(id = node$id, rv = rv, t = G$st$clock, kind = "variable"))
 }

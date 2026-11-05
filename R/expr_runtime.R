@@ -354,6 +354,7 @@ rt_method <- function(obj, name, ...) {
     Trim = trimws(obj), TrimStart = trimws(obj, "left"), TrimEnd = trimws(obj, "right"),
     StartsWith = !is_na1(obj) && startsWith(obj, a[[1]]),
     EndsWith = !is_na1(obj) && endsWith(obj, a[[1]]),
+    ConsistsOf = !is_na1(obj) && all(strsplit(obj, "")[[1]] %in% strsplit(a[[1]], "")[[1]]),
     Substring = { st <- a[[1]] + 1; if (length(a) > 1) substr(obj, st, st + a[[2]] - 1) else substr(obj, st, nchar(obj)) },
     IndexOf = { p <- regexpr(as.character(a[[1]]), obj, fixed = TRUE); if (p < 0) -1L else as.integer(p) - 1L },
     Replace = gsub(a[[1]], a[[2]], obj, fixed = TRUE),

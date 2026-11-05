@@ -1,3 +1,18 @@
+# SuSoSimulate 0.3.1
+
+## Bug fixes
+* PDF input: `NUMERIC: INTEGER` questions were read as decimal (e.g. a region code of 8.88). Options printed at the end of a wrapped line ("... 01 Yes"), page footers, "/" in question text, wrapped conditions and validations, and a categories-only Appendix A are now handled.
+* Text answers follow the variable: codes and ids give digit strings, barcodes alphanumeric strings, region/district/EA/site names place names.
+* `ConsistsOf()` is supported.
+
+## Speed
+* Coverage repair skips outcomes ruled out by validation bounds, stops after `max(20, repair_budget/10)` candidates without progress, and honours the new `suso_mock_config(repair_time = 120)` limit (seconds; also in the app).
+* Repair candidates steer the whole chain of questions that enables an uncovered item (long "== 1" gate sequences are now reached in a few candidates instead of never).
+* Enabling conditions are re-evaluated only when a variable they reference changes; disabled sections are cleared once. About 25% faster on heavy questionnaires.
+
+## App
+* Several files can be uploaded together (document.json + category files).
+
 # SuSoSimulate 0.3.0
 
 ## Export layout (breaking)

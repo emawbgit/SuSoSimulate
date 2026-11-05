@@ -37,12 +37,21 @@ missing_branches <- function(qn, cov) {
 }
 
 repair_coverage <- function(qn, cfg, frame, states, cov, verbose = TRUE) {
+  # outcomes the questionnaire's own validation bounds rule out can never be hit: don't spend the budget on them
+  hopeless <- function(k) nzchar(unreachable_hint(qn, qn$nodes[[sub(":[TF]$", "", k)]], need = grepl(":T$", k)))
   miss0 <- missing_branches(qn, cov)
+  dead <- miss0[vapply(miss0, hopeless, TRUE)]
+  miss0 <- setdiff(miss0, dead)
   if (!length(miss0)) return(states)
-  sm_msg(verbose, sprintf("Coverage repair: %d uncovered branch outcomes, budget %d candidates", length(miss0), cfg$repair_budget))
-  tries <- 0L; swaps <- 0L
-  while (tries < cfg$repair_budget) {
-    miss <- missing_branches(qn, cov)
+  patience <- max(20L, cfg$repair_budget %/% 10L)        # stop after this many candidates without progress
+  sm_msg(verbose, sprintf("Coverage repair: %d uncovered branch outcomes (%d unreachable skipped), budget %d candidates",
+                          length(miss0), length(dead), cfg$repair_budget))
+  vmap <- list()
+  for (id in qn$order) { v <- qn$nodes[[id]]$varname %||% ""; if (nzchar(v)) vmap[[v]] <- id }
+  tries <- 0L; swaps <- 0L; last_gain <- 0L
+  t_end <- Sys.time() + (cfg$repair_time %||% Inf)
+  while (tries < cfg$repair_budget && tries - last_gain < patience && Sys.time() < t_end) {
+    miss <- setdiff(missing_branches(qn, cov), dead)
     if (!length(miss)) break
     tries <- tries + 1L
     keys <- lapply(states, function(st) ls(st$hits))
@@ -55,18 +64,43 @@ repair_coverage <- function(qn, cfg, frame, states, cov, verbose = TRUE) {
       unit <- states[[sample.int(length(states), 1)]]$unit
       unit$ssu <- max(vapply(states, function(s) s$unit$ssu, 0)) + 1
     } else break
-    focus <- unique(unlist(lapply(unique(sub(":[TF]$", "", miss)), function(id) qn$nodes[[id]]$enc$refs)))
-    st <- generate_interview(qn, cfg, unit, cov, tune = list(target_prob = 0.9, focus = focus))
+    mid <- unique(sub(":[TF]$", "", miss))
+    mid <- mid[(tries - 1L) %% length(mid) + 1L]            # one uncovered item per candidate, in rotation
+    focus <- unique(unlist(lapply(mid, function(id) qn$nodes[[id]]$enc$refs)))
+    st <- generate_interview(qn, cfg, unit, cov, tune = list(target_prob = 0.9, focus = focus,
+                                                             enable = setdiff(focus_vars(qn, vmap, mid), focus)))
     if (length(intersect(ls(st$hits), miss))) {
       if (i <= length(states)) cov_commit(cov, states[[i]], -1)
       cov_commit(cov, st, 1)
       states[[i]] <- st
-      swaps <- swaps + 1L
+      swaps <- swaps + 1L; last_gain <- tries
     }
   }
-  left <- length(missing_branches(qn, cov))
-  sm_msg(verbose, sprintf("  %d interviews replaced in %d tries; %d branch outcomes still uncovered", swaps, tries, left))
+  left <- length(setdiff(missing_branches(qn, cov), dead))
+  sm_msg(verbose, sprintf("  %d interviews replaced in %d tries; %d branch outcomes still uncovered%s", swaps, tries, left,
+                          if (Sys.time() >= t_end) sprintf(" (stopped at repair_time = %ss)", cfg$repair_time) else ""))
   states
+}
+
+# Variables to steer for uncovered node ids: those in their conditions, plus, transitively, those
+# that enable them and their ancestors (a long chain of "== 1" gates is otherwise rarely walked to the end)
+focus_vars <- function(qn, vmap, ids, depth = 15L) {
+  seen_n <- character(); out <- character()
+  todo <- ids
+  while (length(todo) && depth > 0L) {
+    depth <- depth - 1L; nxt <- character()
+    for (id in setdiff(todo, seen_n)) {
+      seen_n <- c(seen_n, id)
+      nd <- qn$nodes[[id]]
+      up <- id; p <- nd$parent
+      while (length(p) == 1 && !is.na(p) && nzchar(p) && !is.null(qn$nodes[[p]])) { up <- c(up, p); p <- qn$nodes[[p]]$parent }
+      r <- unique(unlist(lapply(up, function(u) qn$nodes[[u]]$enc$refs)))
+      out <- union(out, r)
+      nxt <- c(nxt, unlist(vmap[r], use.names = FALSE))
+    }
+    todo <- unique(nxt)
+  }
+  out
 }
 
 coverage_report <- function(qn, cov, n) {

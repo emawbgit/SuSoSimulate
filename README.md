@@ -87,7 +87,7 @@ install.packages(".", repos = NULL, type = "source")
 ### Option C — install from a source tarball
 
 ```r
-install.packages("SuSoSimulate_0.3.0.tar.gz", repos = NULL, type = "source")
+install.packages("SuSoSimulate_0.3.1.tar.gz", repos = NULL, type = "source")
 ```
 
 ### Check the installation
@@ -122,7 +122,7 @@ Or from the command line, inside the clone:
 Rscript -e 'testthat::test_local()'
 ```
 
-Expected result: `[ FAIL 0 | WARN 0 | SKIP 0 | PASS 191 ]`. The suite has seven files:
+Expected result: `[ FAIL 0 | WARN 0 | SKIP 0 | PASS 201 ]`. The suite has eight files:
 
 | File | What it checks |
 |---|---|
@@ -132,6 +132,7 @@ Expected result: `[ FAIL 0 | WARN 0 | SKIP 0 | PASS 191 ]`. The suite has seven 
 | `test-validation.R` | Clear errors for invalid arguments and malformed files; safe helpers; factor columns in frames; paradata encoding (UTF-8 BOM, CRLF); zip output |
 | `test-app.R` | The Shiny server workflow (load → generate → download zip / settings → re-upload settings → bad file), and a run of the R script the app writes |
 | `test-export-layout.R` | Export folder `<Q>_SuSoMock_<timestamp>`, versioned zip names and zip-root contents, `export__info.json`, re-reading the exported STATA zip (version detection), paradata event order and roles (`suso_read_paradata()`) |
+| `test-pdf.R` | PDF reader on a synthetic printout (integer types, wrapped options, conditions and validations); `ConsistsOf`; code-like text answers |
 | `helper-integrity.R` | Shared checker: unique keys, every roster row has a parent row, no orphan interviews, sequential paradata order, parseable timestamps |
 
 The edge-case fixture covers:
@@ -147,7 +148,7 @@ The edge-case fixture covers:
 
 ```bash
 R CMD build .
-R CMD check --no-manual SuSoSimulate_0.3.0.tar.gz
+R CMD check --no-manual SuSoSimulate_0.3.1.tar.gz
 ```
 
 Expected: `Status: OK`.
@@ -284,8 +285,8 @@ res <- suso_mock(
 | `document.json` | Directly | Designer → *Download* → JSON, or from any archive below |
 | HQ export `.zip` | Searches for `document.json`; unpacks `Questionnaire/content.zip` if needed | Reusable categories are read from `Categories/*.xlsx` |
 | Designer package `.zip` | Same | |
-| Folder | Searches recursively | |
-| Questionnaire `.pdf` | `pdftools` (default) or the `markitdown` CLI (`pdf_engine = "markitdown"`) | **Experimental.** PDF text interleaves table columns, so parsing is heuristic. On a 312-question test questionnaire it recovered 270 questions, all with the correct type, plus 171/174 conditions and 22/24 rosters. Prefer JSON. |
+| Folder (e.g. `Questionnaire/content/` of an earlier export) | Searches recursively | `document.json` + `Categories/`: the exact questionnaire. In the app, upload `content.zip` or the whole export zip, or select `document.json` together with the category files |
+| Questionnaire `.pdf` | `pdftools` (default) or the `markitdown` CLI (`pdf_engine = "markitdown"`) | **Experimental.** PDF text interleaves table columns, so parsing is heuristic. On a 312-question test questionnaire it recovered 270 questions, all with the correct type, plus 171/174 conditions and 22/24 rosters. Validations wrapped over lines and reusable categories can be lost. Prefer JSON or `content.zip`. |
 
 ---
 
@@ -325,7 +326,7 @@ res <- suso_mock(
 | `null_share` | 0.25 | Leaves questions tested with `== null` or `IsAnswered()` blank sometimes, so both branches occur |
 | `status_mix` | 20/30/50% | Final status shares: 100 Completed, 120 ApprovedBySupervisor, 130 ApprovedByHeadquarters, 65 RejectedBySupervisor, 125 RejectedByHeadquarters |
 | `tz_offset` | `"+03:00"` | Local UTC offset of the field team |
-| `coverage_repair`, `repair_budget`, `allow_augment` | `TRUE`, 400, `FALSE` | Coverage repair loop (see below) |
+| `coverage_repair`, `repair_budget`, `repair_time`, `allow_augment` | `TRUE`, 400, 120, `FALSE` | Coverage repair loop (see below). Stops at the budget, after `max(20, budget/10)` candidates without progress, or after `repair_time` seconds |
 | `unsupported_p` | 0.5 | TRUE-probability used for conditions the translator cannot run |
 | `na_numeric`, `na_string` | `NA`, `"##N/A##"` | Codes for *enabled but unanswered* values (SuSo 24.x Stata conventions) |
 | `pause_rate`, `correction_rate`, `comment_rate` | 0.3, 0.04, 0.004 | Paradata realism: pauses, answer corrections, comments |
@@ -452,7 +453,7 @@ res$coverage$branches   # item, kind, level, condition, n_true, n_false, status,
 | `status` | Meaning |
 |---|---|
 | `covered` | Both TRUE and FALSE occurred in at least one interview |
-| `TRUE only` / `FALSE only` | One outcome never occurred. Check `note`: `unreachable: …` means the questionnaire's own validations make it impossible. Otherwise raise `repair_budget` or the sample size |
+| `TRUE only` / `FALSE only` | One outcome never occurred. Check `note`: `unreachable: …` means the questionnaire's own validations make it impossible. Otherwise raise `repair_budget`, `repair_time` or the sample size |
 | `never evaluated` | The item is never reached, for example because its parent is always disabled |
 
 The `issue` column lists expressions the translator could not run, and C# runtime exceptions (for example `.Value` on null).
@@ -584,7 +585,7 @@ The test also translated every one of the questionnaire's 237 enabling condition
 - **Lookup tables.** `table[row].col` and `LinkedFilterExpression` with `@current` are not translated. They fall back to a random draw and are flagged in `$coverage$branches$issue`.
 - **Unverified formats.** The export layout of single-selects linked to *nested* rosters has not been checked against a real export. Please open an issue with an example if it differs.
 - **Numeric special values** are generated only when the validations accept them.
-- **Speed.** About 0.1 s per interview on simple questionnaires and about 1.5 s on heavy ones: 57-row fixed rosters with nested LINQ conditions are evaluated many times per pass. Coverage repair adds candidate interviews (`repair_budget`).
+- **Speed.** About 0.1 s per interview on simple questionnaires and about 1.5 s on heavy ones: 57-row fixed rosters with nested LINQ conditions are evaluated many times per pass. Coverage repair adds candidate interviews, capped by `repair_budget` and `repair_time`.
 - **PDF input** is heuristic. Always prefer `document.json`.
 - **Not a statistical model.** Answer distributions are plausible but synthetic. Don't use the output for substantive analysis.
 
@@ -596,7 +597,8 @@ The test also translated every one of the questionnaire's 237 enabling condition
 |---|---|
 | `Missing packages: jsonlite, haven` | `install.packages(c("jsonlite", "haven"))` |
 | `Reusable categories … not found: using placeholder codes 1-5` | Use the full Designer or HQ zip, which contains `Categories/*.xlsx`, and install `readxl` |
-| Many `TRUE only` / `FALSE only` rows without an `unreachable` note | Increase `ssu_per_psu`, `repair_budget` (e.g. 1000) or `target_prob`; or set `allow_augment = TRUE` |
+| Many `TRUE only` / `FALSE only` rows without an `unreachable` note | Increase `ssu_per_psu`, `repair_budget` (e.g. 1000), `repair_time` or `target_prob`; or set `allow_augment = TRUE` |
+| Coverage repair is slow | Lower `repair_time` (e.g. 30) or set `coverage_repair = FALSE`. Each repair candidate is a full interview; on heavy questionnaires that is several seconds |
 | `! N interviews did not reach a stable state` | The questionnaire has circular conditions. Increase `max_passes`, or check the reported items |
 | `Stata names limited to 32 characters; renamed: …` | A generated column name (e.g. `var__Timestamp`) is over 32 characters. It is shortened with a collision-safe suffix; to avoid this, shorten the variable name in Designer |
 | Text looks garbled in Stata | Use Stata 14 or later (the files are written as version 14, UTF-8) |

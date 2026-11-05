@@ -21,7 +21,9 @@
 #'   65 RejectedBySupervisor, 125 RejectedByHeadquarters).
 #' @param tz_offset Local UTC offset of fieldwork, e.g. "+03:00".
 #' @param coverage_repair Regenerate interviews until every reachable branch is hit.
-#' @param repair_budget Max candidate interviews tried during repair.
+#' @param repair_budget Max candidate interviews tried during repair. Repair also stops after
+#'   `max(20, repair_budget / 10)` candidates without progress.
+#' @param repair_time Max seconds spent on coverage repair (`Inf`: no limit).
 #' @param allow_augment Append (instead of only replace) interviews when repairing.
 #' @param unsupported_p TRUE-probability for conditions the translator cannot run.
 #' @param na_numeric Value for enabled-but-unanswered numerics (SuSo Stata: NA).
@@ -44,7 +46,7 @@ suso_mock_config <- function(item_nonresponse = 0, error_rate = 0, target_prob =
                              generators = list(), numeric_roster_base = 1,
                              answer_hidden = TRUE, supervisor_answer_rate = 0.3,
                              status_mix = c("100" = 0.2, "120" = 0.3, "130" = 0.5),
-                             tz_offset = "+03:00", coverage_repair = TRUE, repair_budget = 400,
+                             tz_offset = "+03:00", coverage_repair = TRUE, repair_budget = 400, repair_time = 120,
                              allow_augment = FALSE, unsupported_p = 0.5, max_passes = 5,
                              max_tries = 25, max_roster_rows = 200,
                              na_numeric = NA_real_, na_string = "##N/A##",
@@ -64,7 +66,7 @@ validate_config <- function(cfg) {
     if (!is.numeric(v) || length(v) != 1 || is.na(v) || v < 0 || v > 1)
       stop(sprintf("`%s` must be a single number between 0 and 1 (got %s).", a, format(v)), call. = FALSE)
   }
-  for (a in c("roster_mean", "max_roster_default", "repair_budget", "max_passes", "max_tries", "max_roster_rows")) {
+  for (a in c("roster_mean", "max_roster_default", "repair_budget", "repair_time", "max_passes", "max_tries", "max_roster_rows")) {
     v <- cfg[[a]]
     if (!is.numeric(v) || length(v) != 1 || is.na(v) || v < 0) stop(sprintf("`%s` must be a non-negative number.", a), call. = FALSE)
   }

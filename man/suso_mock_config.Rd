@@ -19,6 +19,7 @@ suso_mock_config(
   tz_offset = "+03:00",
   coverage_repair = TRUE,
   repair_budget = 400,
+  repair_time = 120,
   allow_augment = FALSE,
   unsupported_p = 0.5,
   max_passes = 5,
@@ -66,7 +67,10 @@ least-used options (drives routing coverage).}
 
 \item{coverage_repair}{Regenerate interviews until every reachable branch is hit.}
 
-\item{repair_budget}{Max candidate interviews tried during repair.}
+\item{repair_budget}{Max candidate interviews tried during repair. Repair also stops after
+`max(20, repair_budget / 10)` candidates without progress.}
+
+\item{repair_time}{Max seconds spent on coverage repair (`Inf`: no limit).}
 
 \item{allow_augment}{Append (instead of only replace) interviews when repairing.}
 

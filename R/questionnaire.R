@@ -331,6 +331,8 @@ compile_all <- function(qn) {
     nd <- qn$nodes[[id]]
     own <- if (nzchar(nd$varname %||% "")) nd$varname else id
     nd$enc <- comp(nd$cond_src, own, "condition")
+    nd$memo_refs <- unique(Filter(nzchar, c("__rows__", nd$enc$refs, nd$varname %||% "")))
+    nd$clock_dep <- grepl("DateTime\\s*\\.\\s*(Now|Today|UtcNow)", nd$cond_src)
     if (!is.null(nd$enc$ast)) {
       tg <- ast_targets(nd$enc$ast, nd$varname)
       for (v in names(tg)) targets[[v]] <- unique(c(targets[[v]], tg[[v]]))
