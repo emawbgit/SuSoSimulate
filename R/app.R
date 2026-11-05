@@ -40,6 +40,44 @@ suso_app_object <- function() {
   shiny::shinyApp(app_ui(), app_server)
 }
 
+# OpenStreetMap + Leaflet.draw (bundled in inst/app/www/leaflet; no R package needed; tiles need internet).
+# The drawn shapes are sent to the server as GeoJSON (input$boundary_geojson).
+map_head <- function() {
+  shiny::tags$head(
+    shiny::tags$link(rel = "stylesheet", href = "susosim/leaflet/leaflet.css"),
+    shiny::tags$link(rel = "stylesheet", href = "susosim/leaflet/leaflet.draw.css"),
+    shiny::tags$script(src = "susosim/leaflet/leaflet.js"),
+    shiny::tags$script(src = "susosim/leaflet/leaflet.draw.js"),
+    shiny::tags$script(shiny::HTML("
+(function(){
+  var map = null, drawn = null;
+  function send(){ if (window.Shiny) Shiny.setInputValue('boundary_geojson', JSON.stringify(drawn.toGeoJSON()), {priority:'event'}); }
+  function init(){
+    var el = document.getElementById('bmap');
+    if (!el || map) return;
+    if (typeof L === 'undefined' || !L.Control.Draw) { el.innerHTML = '<small class=\"text-muted\">Map unavailable: upload a GeoJSON instead.</small>'; return; }
+    map = L.map(el).setView([1.3, 32.3], 6);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19,
+      attribution: '&copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors'}).addTo(map);
+    drawn = new L.FeatureGroup().addTo(map);
+    map.addControl(new L.Control.Draw({edit: {featureGroup: drawn},
+      draw: {polygon: true, rectangle: true, polyline: false, circle: false, marker: false, circlemarker: false}}));
+    map.on(L.Draw.Event.CREATED, function(e){ drawn.addLayer(e.layer); send(); });
+    map.on(L.Draw.Event.EDITED, send); map.on(L.Draw.Event.DELETED, send);
+  }
+  document.addEventListener('shown.bs.tab', function(){ setTimeout(function(){ init(); if (map) map.invalidateSize(); }, 50); });
+  document.addEventListener('DOMContentLoaded', function(){ setTimeout(init, 300); });
+  if (window.jQuery) jQuery(document).on('shiny:connected', function(){
+    Shiny.addCustomMessageHandler('show_boundary', function(gj){
+      init(); if (!map) return;
+      drawn.clearLayers();
+      L.geoJSON(typeof gj === 'string' ? JSON.parse(gj) : gj).eachLayer(function(l){ drawn.addLayer(l); });
+      if (drawn.getLayers().length) map.fitBounds(drawn.getBounds());
+    });
+  });
+})();")))
+}
+
 # --------------------------------------------------------------------------- UI
 app_ui <- function() {
   num <- function(id, label, value, min = NA, max = NA, step = NA)
@@ -51,19 +89,20 @@ app_ui <- function() {
     title = shiny::tags$span(
       shiny::tags$img(src = "susosim/logo.png", height = "34px", style = "margin-right:8px;", alt = ""),
       "SuSoSimulate"),
-    header = shiny::tags$style(shiny::HTML("
+    header = shiny::tagList(map_head(), shiny::tags$style(shiny::HTML("
       .status-covered{color:#1b7f3b;font-weight:600}.status-partial{color:#b26b00;font-weight:600}
       .status-never{color:#a61b1b;font-weight:600} .bslib-value-box .value-box-value{font-size:1.6rem}
-      pre.codebox{max-height:420px;overflow:auto;background:#f6f8fa;padding:10px;border-radius:6px}")),
+      pre.codebox{max-height:420px;overflow:auto;background:#f6f8fa;padding:10px;border-radius:6px}
+      #bmap{height:340px;border-radius:6px;margin-bottom:8px}"))),
 
     # 1 ---------------------------------------------------------------------
     bslib::nav_panel("1. Questionnaire", value = "q",
       bslib::layout_sidebar(
         sidebar = bslib::sidebar(width = 340,
           shiny::h5("Load a questionnaire"),
-          shiny::fileInput("qfile", NULL, accept = c(".json", ".zip", ".pdf", ".xlsx", ".tsv", ".txt"), multiple = TRUE,
-                           placeholder = "HQ export .zip, content.zip, document.json (+ category files)"),
-          ui_hint("Best: any Headquarters export zip, or Questionnaire/content.zip from one (exact questionnaire + categories). You can also select document.json together with the category files. PDF input is experimental and loses detail."),
+          shiny::fileInput("qfile", NULL, accept = c(".zip", ".json", ".xlsx", ".tsv", ".txt"), multiple = TRUE,
+                           placeholder = "HQ export .zip or content.zip"),
+          ui_hint("Upload any Headquarters export zip (Stata, Tabular, ...), or Questionnaire/content.zip from one: it holds the exact questionnaire, its categories and attachments. You can also select document.json together with the category files."),
           shiny::actionButton("use_demo", "Use the demo questionnaire", class = "btn-outline-secondary w-100"),
           shiny::hr(),
           shiny::uiOutput("q_status")),
@@ -86,6 +125,7 @@ app_ui <- function() {
           num("n_strata", "Number of strata (if not categorical)", 1, 1),
           shiny::selectInput("psu_var", "Variable receiving the PSU id", c("(none)" = "")),
           shiny::selectInput("ssu_var", "Variable receiving the household / SSU id", c("(none)" = "")),
+          shiny::selectInput("interviewer_var", "Question recording the interviewer", c("(detect)" = "__auto__", "(none)" = "__none__")),
           ui_hint("Selectors list identifying (cover) questions first, then other main-level questions."),
           shiny::uiOutput("n_total")),
         bslib::card(bslib::card_header("Field teams & calendar"),
@@ -95,8 +135,11 @@ app_ui <- function() {
           num("ipd", "Interviews per interviewer per day", 4, 1),
           shiny::selectInput("assignment_per", "Assignments", c("One per interview" = "interview", "One per PSU" = "psu")),
           shiny::textInput("tz_offset", "Local UTC offset", "+03:00")),
-        bslib::card(bslib::card_header("GPS area & preload frame"),
-          ui_hint("Bounding box (decimal degrees) for PSU centroids."),
+        bslib::card(bslib::card_header("Survey area & preload frame"),
+          ui_hint("Draw the survey area on the OpenStreetMap (polygon or rectangle tool), or upload a GeoJSON (e.g. from geojson.io). PSU centroids are placed inside it. Without a boundary, the bounding box below is used."),
+          shiny::div(id = "bmap"),
+          shiny::fileInput("boundary_file", NULL, accept = c(".geojson", ".json"), placeholder = "Boundary GeoJSON"),
+          shiny::uiOutput("boundary_status"),
           bslib::layout_column_wrap(width = 1 / 2, fill = FALSE,
             num("xmin", "xmin (lon)", 29.5, -180, 180), num("xmax", "xmax (lon)", 35, -180, 180),
             num("ymin", "ymin (lat)", -1.5, -90, 90), num("ymax", "ymax (lat)", 4.2, -90, 90)),
@@ -120,6 +163,7 @@ app_ui <- function() {
           num("repair_budget", "Repair budget (candidate interviews)", 400, 0),
           num("repair_time", "Repair time limit (seconds)", 120, 0),
           bslib::input_switch("allow_augment", "Append (rather than replace) repair interviews", FALSE),
+          bslib::input_switch("cover_first", "Cover questions and interviewer first in the main file", TRUE),
           shiny::h6("Final interview status shares"),
           bslib::layout_column_wrap(width = 1 / 3, fill = FALSE,
             num("st100", "Completed", 0.2, 0, 1, 0.05), num("st120", "Approved (sup.)", 0.3, 0, 1, 0.05),
@@ -153,8 +197,9 @@ app_ui <- function() {
     bslib::nav_panel("5. Export", value = "x",
       bslib::layout_columns(col_widths = c(4, 4, 4),
         bslib::card(bslib::card_header("Mock export"),
-          ui_hint("Folder <Q>_SuSoMock_<timestamp> with <Q>_<version>_STATA_All.zip and <Q>_<version>_Paradata_All.zip (as downloaded from HQ), coverage reports, sample frame and settings."),
+          ui_hint("Folder <Q>_<version>_SuSoMock_<timestamp> with <Q>_<version>_STATA_All.zip (or _Tabular_All) and <Q>_<version>_Paradata_All.zip as downloaded from HQ, assignments, coverage reports, sample frame and settings."),
           shiny::numericInput("version", "Questionnaire version (HQ)", value = 1, min = 1, step = 1),
+          shiny::radioButtons("format", "Export format", c("Stata (.dta)" = "stata", "Tabular (.tab + .do)" = "tabular"), inline = TRUE),
           shiny::downloadButton("dl_zip", "Download everything (.zip)", class = "btn-primary w-100 mb-3"),
           shiny::textInput("save_dir", "Or save to a folder on this computer", value = getwd()),
           shiny::actionButton("save_btn", "Save export to folder", class = "w-100"),
@@ -176,7 +221,8 @@ app_ui <- function() {
 
 # ----------------------------------------------------------------------- server
 app_server <- function(input, output, session) {
-  rv <- shiny::reactiveValues(qn = NULL, qpath = NULL, qname = NULL, res = NULL, frame = NULL, err = NULL, log = NULL, saved = NULL)
+  rv <- shiny::reactiveValues(qn = NULL, qpath = NULL, qname = NULL, res = NULL, frame = NULL, err = NULL, log = NULL, saved = NULL,
+                            boundary = NULL, run_settings = NULL)
   pct <- function(x) sprintf("%.1f%%", 100 * x)
   dt <- function(df, ...) DT::datatable(df, rownames = FALSE, filter = "none",
                                         options = list(pageLength = 15, scrollX = TRUE, ...))
@@ -265,6 +311,30 @@ app_server <- function(input, output, session) {
     shiny::updateSelectInput(session, "strata_var", choices = ch, selected = guess("region|strat|province|district"))
     shiny::updateSelectInput(session, "psu_var", choices = ch, selected = guess("^ea|psu|cluster"))
     shiny::updateSelectInput(session, "ssu_var", choices = ch, selected = guess("hh_?id|hhid|household|ssu"))
+    shiny::updateSelectInput(session, "interviewer_var", selected = "__auto__",
+      choices = c("(detect)" = "__auto__", "(none)" = "__none__", stats::setNames(c(feat, other), c(feat, other))))
+  })
+  # ---- survey boundary: drawn on the map (JS sends GeoJSON) or uploaded
+  set_boundary <- function(json, from_map = FALSE) {
+    b <- tryCatch(read_boundary(json), error = function(e) e)
+    if (inherits(b, "error")) {
+      if (!from_map) shiny::showNotification(conditionMessage(b), type = "error")
+      rv$boundary <- NULL; return(invisible())
+    }
+    rv$boundary <- json
+    bb <- boundary_bbox(b)
+    for (k in 1:4) shiny::updateNumericInput(session, c("xmin", "ymin", "xmax", "ymax")[k], value = round(bb[k], 5))
+    if (!from_map) session$sendCustomMessage("show_boundary", json)
+  }
+  shiny::observeEvent(input$boundary_geojson, {
+    j <- input$boundary_geojson
+    if (!nzchar(j %||% "") || grepl('"features":\\[\\]', j)) rv$boundary <- NULL else set_boundary(j, from_map = TRUE)
+  })
+  shiny::observeEvent(input$boundary_file, set_boundary(paste(readLines(input$boundary_file$datapath, warn = FALSE), collapse = "\n")))
+  output$boundary_status <- shiny::renderUI({
+    if (is.null(rv$boundary)) return(NULL)
+    b <- read_boundary(rv$boundary)
+    shiny::div(class = "alert alert-secondary py-1", sprintf("Boundary: %d polygon(s); PSU centroids are drawn inside.", length(b)))
   })
   shiny::observeEvent(input$frame_file, {
     fr <- tryCatch(utils::read.csv(input$frame_file$datapath, stringsAsFactors = FALSE, check.names = FALSE), error = function(e) e)
@@ -278,9 +348,16 @@ app_server <- function(input, output, session) {
     shiny::div(class = "alert alert-secondary", sprintf("Frame: %d rows. Preloaded variables: %s", nrow(rv$frame),
                                                         if (length(known)) paste(known, collapse = ", ") else "none matched"))
   })
+  target_n <- shiny::reactive({
+    if (!is.null(rv$frame)) return(nrow(rv$frame))
+    a <- suppressWarnings(as.numeric(input$n_psu)); b <- suppressWarnings(as.numeric(input$ssu_per_psu))
+    if (!length(a) || !length(b) || is.na(a) || is.na(b)) NA_real_ else a * b
+  })
   output$n_total <- shiny::renderUI({
-    n <- if (!is.null(rv$frame)) nrow(rv$frame) else (input$n_psu %||% 0) * (input$ssu_per_psu %||% 0)
-    shiny::div(class = "alert alert-info", sprintf("Total interviews: %s", format(n, big.mark = ",")))
+    n <- target_n()
+    if (is.na(n)) return(shiny::div(class = "alert alert-warning", "Enter the number of PSUs and interviews per PSU."))
+    shiny::div(class = "alert alert-info", sprintf("Total interviews: %s%s", format(n, big.mark = ","),
+                                                   if (!is.null(rv$frame)) " (from the preload frame)" else ""))
   })
 
   # ---- 3 roster size inputs per trigger
@@ -316,13 +393,15 @@ app_server <- function(input, output, session) {
                     n_strata = input$n_strata, psu_var = nz(input$psu_var), ssu_var = nz(input$ssu_var),
                     n_interviewers = input$n_interviewers, interviewers_per_supervisor = input$ipsup,
                     start_date = as.character(input$start_date), interviews_per_day = input$ipd,
-                    bbox = c(input$xmin, input$ymin, input$xmax, input$ymax), assignment_per = input$assignment_per),
+                    bbox = c(input$xmin, input$ymin, input$xmax, input$ymax), assignment_per = input$assignment_per,
+                    interviewer_var = switch(input$interviewer_var %||% "__auto__", "__auto__" = NULL, "__none__" = NA, input$interviewer_var),
+                    boundary = rv$boundary),
       config = list(item_nonresponse = input$item_nonresponse, error_rate = input$error_rate,
                     special_value_rate = input$special_value_rate, target_prob = input$target_prob,
                     roster_mean = input$roster_mean, roster_sizes = rs, status_mix = sm, tz_offset = input$tz_offset,
                     coverage_repair = isTRUE(input$coverage_repair), repair_budget = input$repair_budget, repair_time = input$repair_time %||% 120,
-                    allow_augment = isTRUE(input$allow_augment)),
-      seed = input$seed, version = input$version)
+                    allow_augment = isTRUE(input$allow_augment), cover_first = !isFALSE(input$cover_first)),
+      seed = input$seed, version = input$version, format = input$format %||% "stata")
   })
 
   build_args <- function(s) {
@@ -352,6 +431,7 @@ app_server <- function(input, output, session) {
       return()
     }
     rv$res <- res
+    rv$run_settings <- { s$version <- NULL; s }
     for (w in unique(warns)) shiny::showNotification(w, type = "warning", duration = 10)
     shiny::updateSelectInput(session, "data_file", choices = names(res$data))
     shiny::updateSelectInput(session, "sys_file", choices = names(res$system))
@@ -359,8 +439,16 @@ app_server <- function(input, output, session) {
   })
   output$run_status <- shiny::renderUI({
     r <- rv$res
-    if (is.null(r)) return(ui_hint("Settings from tabs 2-3 are used. Large or complex questionnaires can take a few minutes."))
-    shiny::div(class = "alert alert-success mt-3", sprintf("Generated %d interviews into %d files.", nrow(r$data[[1]]), length(r$data)))
+    n <- target_n()
+    if (is.null(r)) return(ui_hint(sprintf("Target: %s interviews (tabs 2-3). Large or complex questionnaires can take a few minutes.",
+                                           if (is.na(n)) "?" else format(n, big.mark = ","))))
+    msg <- shiny::div(class = "alert alert-success mt-3", sprintf("Generated %d interviews into %d files.", nrow(r$data[[1]]), length(r$data)))
+    now <- settings(); now$version <- NULL
+    if (!identical(now, rv$run_settings))
+      msg <- shiny::tagList(msg, shiny::div(class = "alert alert-warning",
+        sprintf("Settings changed since this run (target now %s interviews). Click Generate to apply them.",
+                if (is.na(n)) "?" else format(n, big.mark = ","))))
+    msg
   })
   sm <- shiny::reactive({ shiny::req(rv$res); rv$res$coverage$summary })
   dash <- function(expr) if (is.null(rv$res)) "-" else expr
@@ -392,15 +480,16 @@ app_server <- function(input, output, session) {
 
   # ---- 5 export
   export_to <- function(dir, ts) {
-    root <- suppressWarnings(write_suso_mock(rv$res, dir, version = input$version, timestamp = ts, verbose = FALSE))
+    root <- suppressWarnings(write_suso_mock(rv$res, dir, version = input$version, format = input$format %||% "stata",
+                                             timestamp = ts, verbose = FALSE))
     writeLines(app_r_code(settings(), rv$qname, !is.null(rv$frame)), file.path(root, "reproduce_mock.R"))
-    writeLines(app_do_code(rv$res$questionnaire, input$version), file.path(root, "load_mock.do"))
+    writeLines(app_do_code(rv$res$questionnaire, input$version, input$format), file.path(root, "load_mock.do"))
     root
   }
   dl_ts <- shiny::reactiveVal(Sys.time())
   output$dl_zip <- shiny::downloadHandler(
     filename = function() { dl_ts(Sys.time())
-      sprintf("%s_SuSoMock_%s.zip", rv$res$questionnaire$varname %||% "suso", format(dl_ts(), "%Y%m%d_%H%M%S")) },
+      paste0(mock_dir_name(rv$res$questionnaire$varname %||% "suso", input$version %||% 1, dl_ts()), ".zip") },
     content = function(file) {
       shiny::req(rv$res)
       td <- tempfile("susosim_"); dir.create(td)
@@ -431,6 +520,8 @@ app_server <- function(input, output, session) {
     for (v in c("item_nonresponse", "error_rate", "special_value_rate", "target_prob"))
       if (!is.null(cf[[v]])) shiny::updateSliderInput(session, v, value = cf[[v]])
     upd_num("roster_mean", cf$roster_mean); upd_num("repair_budget", cf$repair_budget); upd_num("repair_time", cf$repair_time); upd_num("seed", p$seed); upd_num("version", p$version)
+    if (!is.null(p$format)) shiny::updateRadioButtons(session, "format", selected = p$format)
+    if (!is.null(d$boundary)) set_boundary(d$boundary)
     if (!is.null(cf$tz_offset)) shiny::updateTextInput(session, "tz_offset", value = cf$tz_offset)
     if (!is.null(cf$coverage_repair)) bslib::update_switch("coverage_repair", value = isTRUE(cf$coverage_repair), session = session)
     if (!is.null(cf$allow_augment)) bslib::update_switch("allow_augment", value = isTRUE(cf$allow_augment), session = session)
@@ -442,9 +533,9 @@ app_server <- function(input, output, session) {
   output$dl_r <- shiny::downloadHandler(filename = function() "reproduce_mock.R",
     content = function(file) writeLines(app_r_code(settings(), rv$qname, !is.null(rv$frame)), file))
   output$dl_do <- shiny::downloadHandler(filename = function() "load_mock.do",
-    content = function(file) { shiny::req(rv$qn); writeLines(app_do_code(rv$qn, input$version), file) })
+    content = function(file) { shiny::req(rv$qn); writeLines(app_do_code(rv$qn, input$version, input$format), file) })
   output$code_r <- shiny::renderText(paste(app_r_code(settings(), rv$qname, !is.null(rv$frame)), collapse = "\n"))
-  output$code_do <- shiny::renderText({ shiny::req(rv$qn); paste(app_do_code(rv$qn, input$version), collapse = "\n") })
+  output$code_do <- shiny::renderText({ shiny::req(rv$qn); paste(app_do_code(rv$qn, input$version, input$format), collapse = "\n") })
 }
 
 # ---------------------------------------------------------------- code templates
@@ -454,7 +545,7 @@ r_lit <- function(x) {
     if (!length(x)) return("list()")
     return(paste0("list(", paste(names(x), vapply(x, r_lit, ""), sep = " = ", collapse = ", "), ")"))
   }
-  if (is.character(x)) v <- paste0('"', x, '"') else if (is.logical(x)) v <- ifelse(x, "TRUE", "FALSE") else v <- fmt_num(x)
+  if (is.character(x)) v <- encodeString(x, quote = '"') else if (is.logical(x)) v <- ifelse(x, "TRUE", "FALSE") else v <- fmt_num(x)
   if (!is.null(names(x))) v <- paste0('"', names(x), '" = ', v)
   if (length(x) == 1 && is.null(names(x))) v else paste0("c(", paste(v, collapse = ", "), ")")
 }
@@ -481,12 +572,17 @@ app_r_code <- function(s, qname = NULL, has_frame = FALSE) {
     "", "res                         # coverage summary", "res$coverage$branches       # per-condition detail")
 }
 
-app_do_code <- function(qn, version = 1) {
+app_do_code <- function(qn, version = 1, format = "stata") {
   main <- qn$varname
   stem <- sprintf("%s_%d", main, as.integer(version %||% 1))
-  out <- c("* Load and merge SuSoSimulate output (same layout as a Survey Solutions Stata export)",
-           sprintf("* cd into the %s_SuSoMock_<timestamp> folder, then run.", main),
-           sprintf('global mock "%s_STATA_All"', stem), "",
+  tab <- identical(format, "tabular")
+  files <- c(main, vapply(qn$levels[setdiff(names(qn$levels), "main")], `[[`, "", "file"))
+  conv <- if (tab) c("* Tabular export: import each .tab with its .do file and save it as .dta",
+                     paste0("foreach f in ", paste(files, collapse = " "), " {"),
+                     '    quietly do "$mock/`f\'.do"', '    save "$mock/`f\'.dta", replace', "}", "")
+  out <- c(sprintf("* Load and merge SuSoSimulate output (same layout as a Survey Solutions %s export)", if (tab) "Tabular" else "Stata"),
+           sprintf("* cd into the %s_SuSoMock_<timestamp> folder, then run.", stem),
+           sprintf('global mock "%s_%s_All"', stem, if (tab) "Tabular" else "STATA"), "", conv,
            sprintf('use "$mock/%s.dta", clear', main), "describe, short", "tab interview__status", "")
   lv <- qn$levels[setdiff(names(qn$levels), "main")]
   for (k in names(lv)) {

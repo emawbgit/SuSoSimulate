@@ -8,8 +8,10 @@
 #'   or a `suso_questionnaire` object.
 #' @param design A [suso_design()] object (sampling frame, teams, calendar).
 #' @param config A [suso_mock_config()] object.
-#' @param out_dir Folder in which the export folder `<Questionnaire>_SuSoMock_<timestamp>`
+#' @param out_dir Folder in which the export folder `<Questionnaire>_<version>_SuSoMock_<timestamp>`
 #'   is created (default: working directory). `NULL` returns data without writing.
+#' @param format Export format, as chosen in HQ: `"stata"` (`.dta`, `<Q>_<v>_STATA_All`)
+#'   or `"tabular"` (`.tab` + `.do`, `<Q>_<v>_Tabular_All`).
 #' @param version Questionnaire version number used in the export names
 #'   (`<Questionnaire>_<version>_STATA_All`), as HQ numbers each imported version.
 #'   Default: the version detected from an HQ export input, otherwise 1.
@@ -22,8 +24,10 @@
 #'   per export file), `$system`, `$paradata`, `$coverage`, `$frame`.
 #' @export
 suso_mock <- function(questionnaire, design = suso_design(), config = suso_mock_config(),
-                      out_dir = ".", version = NULL, seed = NULL, zip = TRUE, verbose = TRUE, progress = NULL) {
+                      out_dir = ".", version = NULL, format = c("stata", "tabular"), seed = NULL, zip = TRUE,
+                      verbose = TRUE, progress = NULL) {
   check_dependencies()
+  format <- match.arg(format)
   if (!inherits(design, "suso_design")) stop("`design` must be created with suso_design().", call. = FALSE)
   if (!inherits(config, "suso_mock_config")) stop("`config` must be created with suso_mock_config().", call. = FALSE)
   validate_config(config)
@@ -35,6 +39,7 @@ suso_mock <- function(questionnaire, design = suso_design(), config = suso_mock_
   qn <- if (inherits(questionnaire, "suso_questionnaire")) questionnaire else suso_read_questionnaire(questionnaire, verbose = verbose)
   version <- resolve_version(version, qn)
   frame <- build_frame(design, qn)
+  qn$interviewer_var <- frame$interviewer_var
   n <- nrow(frame$meta)
   sm_msg(verbose, sprintf("Generating %d interviews (%d PSUs)...", n, length(unique(frame$meta$psu))))
   cov <- new_coverage()
@@ -61,7 +66,7 @@ suso_mock <- function(questionnaire, design = suso_design(), config = suso_mock_
     key = new_interview_keys(n), id = new_guid(n),
     status = as.numeric(sample(names(st_mix), n, TRUE, prob = st_mix)),
     assignment_id = vapply(states, function(s) as.numeric(s$unit$assignment_id), 0),
-    irnd = stats::runif(n),
+    irnd = vapply(states, function(s) s$unit$irnd %||% stats::runif(1), 0),
     n_errors = vapply(states, function(s) {
       e <- log_items(s$errors); e <- Filter(function(x) x$severity == 0, e)
       length(unique(vapply(e, function(x) paste(x$id, rv_str(x$rv)), "")))
@@ -77,15 +82,37 @@ suso_mock <- function(questionnaire, design = suso_design(), config = suso_mock_
   sysf <- build_system_files(qn, states, meta, para, config)
   cr <- coverage_report(qn, cov, n)
 
+  ui <- vapply(states, function(s) s$unit$unit, 0)
   res <- structure(list(data = tables, system = sysf, paradata = para$paradata, coverage = cr,
-                        frame = cbind(frame$meta[vapply(states, function(s) s$unit$unit, 0), ],
-                                      interview__key = meta$key, interview__id = meta$id),
+                        frame = cbind(frame$meta[ui, ], interview__key = meta$key, interview__id = meta$id),
+                        preload = frame$preload[ui, , drop = FALSE],
                         questionnaire = qn, config = config, design = design, version = version,
-                        export_dir = NULL),
+                        format = format, export_dir = NULL),
                    class = "suso_mock")
-  if (!is.null(out_dir)) res$export_dir <- write_suso_mock(res, out_dir, zip = zip, verbose = verbose)
+  if (!is.null(out_dir)) res$export_dir <- write_suso_mock(res, out_dir, format = format, zip = zip, verbose = verbose)
   progress(1, "Done")
   res
+}
+
+mock_dir_name <- function(q, version, timestamp = Sys.time())
+  sprintf("%s_%d_SuSoMock_%s", q, as.integer(version), format(timestamp, "%Y%m%d_%H%M%S"))
+
+# Assignments as uploaded to HQ (tab-delimited preload file): one row per assignment
+# with its preloaded cover values, responsible interviewer and quantity
+assignments_table <- function(x) {
+  qn <- x$questionnaire; m <- x$data[[qn$varname]]; fr <- x$frame
+  pre <- Filter(function(nd) isTRUE(nd$featured) || identical(nd$varname, qn$interviewer_var),
+                lapply(qn$order, function(i) qn$nodes[[i]]))
+  pre <- Filter(function(nd) !length(nd$path) && nd$kind == "question", pre)
+  cols <- intersect(unlist(lapply(pre, function(nd) vapply(col_specs(qn, nd), `[[`, "", "name"))), names(m))
+  a <- data.frame(assignment__id = as.numeric(m$assignment__id), check.names = FALSE)
+  for (c in cols) a[[c]] <- m[[c]]
+  # only values shared by every interview of the assignment can be preloaded
+  keep <- vapply(cols, function(c) all(tapply(tab_cell(a[[c]]), a$assignment__id, function(v) length(unique(v)) == 1)), TRUE)
+  a <- a[, c("assignment__id", cols[keep]), drop = FALSE]
+  a$`_responsible` <- fr$interviewer[match(m$interview__id, fr$interview__id)]
+  a$`_quantity` <- as.vector(table(a$assignment__id)[as.character(a$assignment__id)])
+  a[!duplicated(a$assignment__id), , drop = FALSE]
 }
 
 resolve_version <- function(version, qn) {
@@ -106,23 +133,26 @@ resolve_version <- function(version, qn) {
 #' @param x Result of [suso_mock()].
 #' @param out_dir Folder in which the export folder is created.
 #' @param version Questionnaire version (default: the one used by [suso_mock()]).
+#' @param format `"stata"` or `"tabular"` (default: the one used by [suso_mock()]).
 #' @param zip Also create the HQ-style zip archives.
 #' @param timestamp Time used in the export folder name.
 #' @param verbose Print progress.
 #' @return The export folder path, invisibly.
 #' @export
-write_suso_mock <- function(x, out_dir = ".", version = x$version, zip = TRUE,
+write_suso_mock <- function(x, out_dir = ".", version = x$version, format = x$format %||% "stata", zip = TRUE,
                             timestamp = Sys.time(), verbose = TRUE) {
   qn <- x$questionnaire
   q <- qn$varname
   version <- resolve_version(version, qn)
+  format <- match.arg(format, c("stata", "tabular"))
+  tab <- format == "tabular"
   if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
-  root <- file.path(normalizePath(out_dir), sprintf("%s_SuSoMock_%s", q, format(timestamp, "%Y%m%d_%H%M%S")))
+  root <- file.path(normalizePath(out_dir), mock_dir_name(q, version, timestamp))
   k <- 1L; base <- root
   while (dir.exists(root)) { k <- k + 1L; root <- paste0(base, "_", k) }
   dir.create(root)
   stem <- sprintf("%s_%d", q, version)
-  dd <- file.path(root, paste0(stem, "_STATA_All")); pd <- file.path(root, paste0(stem, "_Paradata_All"))
+  dd <- file.path(root, paste0(stem, if (tab) "_Tabular_All" else "_STATA_All")); pd <- file.path(root, paste0(stem, "_Paradata_All"))
   dir.create(dd); dir.create(pd)
   qid <- tolower(gsub("-", "", qn$id))
   gen <- sprintf("Generated by SuSoSimulate %s (mock Survey Solutions export) on %s",
@@ -132,14 +162,22 @@ write_suso_mock <- function(x, out_dir = ".", version = x$version, zip = TRUE,
     sprintf("You can open the questionnaire in the Survey Solutions Designer online by that link: https://designer.mysurvey.solutions/questionnaire/details/%s%s",
             qid, if (is.na(qn$revision)) "" else paste0("$", qn$revision)))
 
-  # STATA_All: data + system files + readme + Questionnaire/content.zip
-  for (nm in names(x$data)) write_dta_safe(x$data[[nm]], file.path(dd, paste0(nm, ".dta")))
-  for (nm in names(x$system)) write_dta_safe(x$system[[nm]], file.path(dd, paste0(nm, ".dta")))
+  # STATA_All / Tabular_All: data + system files + readme + Questionnaire/content.zip
+  ext <- if (tab) ".tab" else ".dta"
+  main <- names(x$data)[1]
+  for (nm in c(names(x$data), names(x$system))) {
+    df <- x$data[[nm]] %||% x$system[[nm]]
+    if (!tab) { write_dta_safe(df, file.path(dd, paste0(nm, ext))); next }
+    df <- stata_safe_names(df)
+    write_tab(df, file.path(dd, paste0(nm, ext)))
+    kind <- if (nm == main) "main" else if (nm %in% names(x$data)) "roster" else "system"
+    write_text_raw(write_do(df, nm, kind), file.path(dd, paste0(nm, ".do")))
+  }
   rd <- c(head, "")
   idc <- c("interview__key", "interview__id", "sssys_irnd", "has__errors", "interview__status", "assignment__id")
   for (nm in names(x$data)) {
     v <- setdiff(names(x$data[[nm]]), c(idc, grep("__id$", names(x$data[[nm]]), value = TRUE)))
-    rd <- c(rd, paste0(nm, ".dta"), paste(unique(sub("__.*$", "", v)), collapse = ", "), "")
+    rd <- c(rd, paste0(nm, ext), paste(unique(sub("__.*$", "", v)), collapse = ", "), "")
   }
   writeLines(rd, file.path(dd, "export__readme.txt"))
   write_questionnaire_content(qn, file.path(dd, "Questionnaire"))
@@ -167,10 +205,13 @@ write_suso_mock <- function(x, out_dir = ".", version = x$version, zip = TRUE,
   utils::write.csv(x$coverage$branches, file.path(root, "coverage_branches.csv"), row.names = FALSE)
   utils::write.csv(x$coverage$options, file.path(root, "coverage_options.csv"), row.names = FALSE)
   utils::write.csv(x$frame, file.path(root, "sample_frame.csv"), row.names = FALSE)
+  write_tab(assignments_table(x), file.path(root, "assignments.tab"))
   cfg <- unclass(x$config); cfg$generators <- names(cfg$generators); cfg$roster_sizes <- lapply(cfg$roster_sizes, function(r) if (is.function(r)) "<function>" else r)
   des <- unclass(x$design); des$frame <- if (is.null(des$frame)) NULL else "<user frame>"; des$preload <- names(des$preload)
   des$start_date <- as.character(des$start_date)
-  jsonlite::write_json(list(questionnaire = qn$title, questionnaire_variable = q, version = version, config = cfg, design = des),
+  if (!is.null(des$boundary)) des$boundary <- lapply(unclass(des$boundary), unname)
+  jsonlite::write_json(list(questionnaire = qn$title, questionnaire_variable = q, version = version, format = format,
+                            config = cfg, design = des),
                        file.path(root, "mock_config.json"), auto_unbox = TRUE, pretty = TRUE, null = "null", na = "null")
   if (zip) for (d in c(dd, pd)) zip_dir(d, paste0(d, ".zip"))
   sm_msg(verbose, sprintf("Written to %s  (%d data files, %d system files, %d paradata events)",

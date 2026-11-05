@@ -5,7 +5,7 @@
 # ---------------------------------------------------------------------------
 
 .cs_static_classes <- c("Math", "DateTime", "string", "String", "Convert", "int", "long",
-                        "double", "decimal", "TimeSpan", "Int32", "Int64", "Double", "Decimal")
+                        "double", "decimal", "TimeSpan", "Int32", "Int64", "Double", "Decimal", "Quest")
 .cs_types <- c("int", "long", "double", "decimal", "float", "string", "bool", "DateTime",
                "Int32", "Int64", "Double", "Decimal", "object")
 
@@ -202,6 +202,7 @@ cs_parse <- function(src) {
           type <- nxt()$v
           while (is_op(".")) { nxt(); type <- paste0(type, ".", nxt()$v) }
           skip_generic()
+          if (is_op("?")) nxt()                               # nullable element type: new decimal?[]{...}
           if (is_op("[")) { nxt(); expect("]"); expect("{"); return(list(k = "array", items = parse_args("}"))) }
           args <- list()
           if (is_op("(")) { nxt(); args <- parse_args(")") }

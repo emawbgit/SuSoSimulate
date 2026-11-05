@@ -275,6 +275,7 @@ haversine_m <- function(lat1, lon1, lat2, lon2) {
 rt_member <- function(obj, name) {
   if (inherits(obj, "sus_row")) {
     if (name == "@rowcode") return(as.integer(obj$rv[length(obj$rv)]))
+    if (name == "RosterVector") return(obj$rv)
     ctx <- obj$ctx; ctx$rv <- obj$rv; ctx$path <- obj$path
     return(ctx_lookup(ctx, name))
   }
@@ -283,6 +284,9 @@ rt_member <- function(obj, name) {
                   Missing = sus_multi(setdiff(obj$all, c(obj$yes, obj$no))), Length = length(obj$yes), unsupported(paste0(".", name, " on yes/no"))))
   }
   if (inherits(obj, "sus_tuple")) return(obj[[name]] %||% unsupported(paste0(".", name, " on list item")))
+  if (inherits(obj, "sus_area")) return(switch(name, Area = obj$area, Length = obj$len, NumberOfPoints = , PointsCount = obj$num,
+                                               RequestedAccuracy = obj$racc, RequestedFrequency = obj$rfrq,
+                                               unsupported(paste0(".", name, " on geography answer"))))
   if (inherits(obj, "sus_gps")) {
     if (name %in% names(obj)) return(obj[[name]])
     if (name == "HasValue") return(TRUE)
@@ -398,6 +402,7 @@ rt_static_call <- function(cls, name, ...) {
   na_any <- any(vapply(a, is_na1, TRUE))
   num <- function(f) if (na_any) NA else f
   switch(key,
+    "quest.irnd" = .get_ctx(parent.frame())$st$unit$irnd %||% stats::runif(1),
     "math.abs" = num(abs(a[[1]])), "math.max" = num(max(a[[1]], a[[2]])), "math.min" = num(min(a[[1]], a[[2]])),
     "math.round" = num(if (length(a) > 1) round(a[[1]], a[[2]]) else round(a[[1]])),
     "math.floor" = num(floor(a[[1]])), "math.ceiling" = num(ceiling(a[[1]])),

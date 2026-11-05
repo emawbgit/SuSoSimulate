@@ -44,6 +44,7 @@ para_value <- function(node, v) {
     single = paste(fmt_num(v), collapse = ", "),
     list = clean(paste(unname(unclass(v)), collapse = "|")),
     gps = sprintf("%s,%s[%s]%s", fmt_num(v$Latitude), fmt_num(v$Longitude), fmt_num(v$Accuracy), fmt_num(v$Altitude)),
+    area = if (inherits(v, "sus_area")) area_string(v) else clean(as.character(v)),
     date = if (inherits(v, "POSIXct")) format(v, "%Y-%m-%d %H:%M:%S", tz = "UTC") else format(v, "%Y-%m-%d"),
     numeric = fmt_num(v),
     clean(as.character(v)))
@@ -233,7 +234,7 @@ build_system_files <- function(qn, states, meta, para, cfg) {
       entities__errors = meta$n_errors[i], questions__comments = sum(p$event == "CommentSet"),
       interview__duration = sprintf("%02d.%s", as.integer(active %/% 86400), fmt_hms(active %% 86400)),
       n_questions_unanswered = st$n_unanswered, stringsAsFactors = FALSE)
-    for (x in log_items(st$errors)) {
+    for (x in Filter(function(e) e$severity == 0, log_items(st$errors))) {   # warnings are not exported
       nd <- qn$nodes[[x$id]]; rv <- x$rv
       errs[[length(errs) + 1]] <- data.frame(interview__key = meta$key[i], interview__id = meta$id[i],
         roster = if (length(rv)) qn$levels[[nd$path[length(nd$path)]]]$file else "",
@@ -293,6 +294,10 @@ build_system_files <- function(qn, states, meta, para, cfg) {
     if (!is.null(df$interview__id)) attr(df$interview__id, "label") <- "Unique 32-character long identifier of the interview"
     df
   }
+  # id1..idK: one per roster nesting level of the questionnaire (HQ drops the unused ones)
+  depth <- max(1L, vapply(qn$levels, function(l) as.integer(l$depth %||% 0L), 1L))
+  drop_ids <- function(df) df[, setdiff(names(df), sprintf("id%d", seq_len(4)[seq_len(4) > depth])), drop = FALSE]
+  er <- drop_ids(er); cm <- drop_ids(cm)   # ponytail: rosters deeper than 4 levels keep id1..id4 only
   out <- list(interview__actions = fix_keys(act), interview__diagnostics = fix_keys(dg), interview__errors = fix_keys(er),
               interview__comments = fix_keys(cm), assignment__actions = aa)
   for (f in names(out)) for (c in names(out[[f]])) {

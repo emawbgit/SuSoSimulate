@@ -26,12 +26,16 @@
 #' @param repair_time Max seconds spent on coverage repair (`Inf`: no limit).
 #' @param allow_augment Append (instead of only replace) interviews when repairing.
 #' @param unsupported_p TRUE-probability for conditions the translator cannot run.
-#' @param na_numeric Value for enabled-but-unanswered numerics (SuSo Stata: NA).
+#' @param na_numeric Value for enabled-but-unanswered numerics. Default: Stata extended
+#'   missing `.a` (as HQ exports it); written as -999999999 in Tabular exports.
 #' @param na_string Value for enabled-but-unanswered strings (SuSo: "##N/A##").
 #' @param null_share Scales how often questions tested with `== null` / `IsAnswered()`
 #'   are left unanswered (times `target_prob`), so null branches get covered.
 #' @param special_value_rate Share of numeric answers drawn from the question's special
 #'   values (e.g. -98 "Don't know"), when it has any (still subject to validations).
+#' @param cover_first Put the identifying (cover) questions and the interviewer question
+#'   right after `interview__key`/`interview__id` in the main file, in the order of the
+#'   assignment. `FALSE` keeps HQ's document order.
 #' @param restart_rate Share of interviews the interviewer re-opens after completing
 #'   (`Completed > Paused > Restarted > ... > Completed` in paradata).
 #' @param rejection_rate Share of interviews rejected once by HQ before their final status
@@ -49,8 +53,8 @@ suso_mock_config <- function(item_nonresponse = 0, error_rate = 0, target_prob =
                              tz_offset = "+03:00", coverage_repair = TRUE, repair_budget = 400, repair_time = 120,
                              allow_augment = FALSE, unsupported_p = 0.5, max_passes = 5,
                              max_tries = 25, max_roster_rows = 200,
-                             na_numeric = NA_real_, na_string = "##N/A##",
-                             null_share = 0.25, special_value_rate = 0.03, restart_rate = 0.15, rejection_rate = 0.2,
+                             na_numeric = haven::tagged_na("a"), na_string = "##N/A##",
+                             null_share = 0.25, special_value_rate = 0.03, cover_first = TRUE, restart_rate = 0.15, rejection_rate = 0.2,
                              pause_rate = 0.3, correction_rate = 0.04, comment_rate = 0.004) {
   cfg <- structure(as.list(environment()), class = "suso_mock_config")
   validate_config(cfg)
@@ -108,12 +112,21 @@ validate_config <- function(cfg) {
 #' @param interviews_per_day Interviews per interviewer per day.
 #' @param bbox GPS bounding box `c(xmin, ymin, xmax, ymax)` for PSU centroids.
 #' @param assignment_per "interview" (one assignment each) or "psu".
+#' @param interviewer_var Question recording the interviewer (e.g. a single-select of
+#'   enumerator names). It is filled with the interviewer the assignment belongs to; for a
+#'   single-select its option labels become the interviewer logins, so data, paradata and
+#'   system files agree. `NULL`: detected from names such as "enumerator"/"interviewer";
+#'   `NA`: none.
+#' @param boundary Survey area for PSU centroids: a GeoJSON file or string (e.g. drawn on
+#'   geojson.io or the app's OpenStreetMap), a list parsed from GeoJSON, or a two-column
+#'   lon/lat matrix. Overrides `bbox`.
 #' @export
 suso_design <- function(n_psu = 10, ssu_per_psu = 10, strata_var = NULL, n_strata = 1,
                         psu_var = NULL, ssu_var = NULL, preload = list(), frame = NULL,
                         n_interviewers = NULL, interviewers_per_supervisor = 5,
                         start_date = Sys.Date(), interviews_per_day = 4,
-                        bbox = c(29.5, -1.5, 35.0, 4.2), assignment_per = c("interview", "psu")) {
+                        bbox = c(29.5, -1.5, 35.0, 4.2), assignment_per = c("interview", "psu"),
+                        interviewer_var = NULL, boundary = NULL) {
   assignment_per <- match.arg(assignment_per)
   start_date <- tryCatch(as.Date(start_date), error = function(e) NA)
   if (length(start_date) != 1 || is.na(start_date)) stop("`start_date` must be a date, e.g. \"2025-03-01\".", call. = FALSE)
@@ -132,6 +145,7 @@ suso_design <- function(n_psu = 10, ssu_per_psu = 10, strata_var = NULL, n_strat
   if (!is.null(n_interviewers) && (!is.numeric(n_interviewers) || n_interviewers < 1)) stop("`n_interviewers` must be >= 1.", call. = FALSE)
   if (!is.numeric(interviews_per_day) || interviews_per_day < 1) stop("`interviews_per_day` must be >= 1.", call. = FALSE)
   if (!is.list(preload)) stop("`preload` must be a named list.", call. = FALSE)
+  if (!is.null(boundary)) { boundary <- read_boundary(boundary); bbox <- boundary_bbox(boundary) }
   structure(as.list(environment()), class = "suso_design")
 }
 
@@ -175,6 +189,27 @@ build_frame <- function(design, qn) {
   n_int <- d$n_interviewers %||% max(1L, ceiling(n_psu / 2))
   n_sup <- max(1L, ceiling(n_int / d$interviewers_per_supervisor))
   ints <- sprintf("int%03d", seq_len(n_int))
+  # interviewer question: its option labels are the interviewer logins
+  iv <- d$interviewer_var
+  if (is.null(iv)) iv <- guess_interviewer_var(qn)
+  if (length(iv) != 1 || is.na(iv) || !nzchar(iv)) iv <- NULL
+  ivn <- if (!is.null(iv)) env_get(qn$by_name, iv) else NULL
+  if (!is.null(iv) && (is.null(ivn) || length(ivn$path))) {
+    warning(sprintf("`interviewer_var = \"%s\"` is not a main-level question; ignored.", iv), call. = FALSE)
+    iv <- ivn <- NULL
+  }
+  iv_codes <- seq_len(n_int)
+  if (!is.null(ivn) && ivn$qtype == "single" && is.null(ivn$lnk) && nrow(ivn$options)) {
+    if (n_int > nrow(ivn$options)) {
+      warning(sprintf("%d interviewers but '%s' lists %d names: using %d interviewers.", n_int, iv, nrow(ivn$options),
+                      nrow(ivn$options)), call. = FALSE)
+      n_int <- nrow(ivn$options); n_sup <- max(1L, ceiling(n_int / d$interviewers_per_supervisor))
+    }
+    iv_codes <- ivn$options$code[seq_len(n_int)]
+    lg <- gsub("[^A-Za-z0-9_.-]", "", strip_html(ivn$options$label[seq_len(n_int)]))
+    lg[!nzchar(lg)] <- sprintf("int%03d", which(!nzchar(lg)))
+    ints <- make.unique(lg, sep = "")
+  }
   sups <- sprintf("sup%02d", seq_len(n_sup))
   psu_int <- rep_len(seq_len(n_int), n_psu)
   # calendar: each interviewer works through own PSUs sequentially
@@ -190,13 +225,27 @@ build_frame <- function(design, qn) {
   start <- as.POSIXct(paste(as.Date(d$start_date) + day, "08:00:00"), tz = "UTC") +
     slot * 5400 + round(stats::runif(n, 0, 1800))
   bb <- d$bbox
-  clat <- stats::runif(n_psu, bb[2], bb[4]); clon <- stats::runif(n_psu, bb[1], bb[3])
+  if (!is.null(d$boundary)) { pt <- sample_in_boundary(d$boundary, n_psu); clon <- pt[, 1]; clat <- pt[, 2] }
+  else { clat <- stats::runif(n_psu, bb[2], bb[4]); clon <- stats::runif(n_psu, bb[1], bb[3]) }
   meta <- data.frame(unit = seq_len(n), stratum = stratum, psu = psu, ssu = ssu,
                      interviewer = ints[int_of], supervisor = sups[(int_of - 1L) %/% d$interviewers_per_supervisor + 1L],
                      lat = clat[psu], lon = clon[psu], stringsAsFactors = FALSE)
   meta$start_time <- start
+  meta$irnd <- stats::runif(n)                       # sssys_irnd, also returned by Quest.IRnd()
+  if (!is.null(ivn) && is.null(fr[[iv]])) fr[[iv]] <- if (ivn$qtype %in% c("text", "barcode")) ints[int_of] else iv_codes[int_of]
   meta$assignment_id <- if (d$assignment_per == "psu") 1000L + psu else 1000L + seq_len(n)
-  list(meta = meta, preload = fr)
+  list(meta = meta, preload = fr, interviewer_var = iv)
+}
+
+guess_interviewer_var <- function(qn) {
+  rx <- "enumerator|interviewer|field ?officer|enqu[e\u00ea]teur|^fo(_?name|_?id|_?code)?$|^enum_|^int_?(name|id|code)$"
+  cand <- Filter(function(nd) identical(nd$kind, "question") && !length(nd$path) && is.null(nd$lnk) &&
+                   nd$qtype %in% c("single", "text", "numeric") &&
+                   (grepl(rx, tolower(nd$varname)) || grepl("enumerator|interviewer", tolower(strip_html(nd$text)))),
+                 lapply(qn$order, function(i) qn$nodes[[i]]))
+  if (!length(cand)) return(NULL)
+  sing <- Filter(function(nd) nd$qtype == "single", cand)
+  (if (length(sing)) sing[[1]] else cand[[1]])$varname
 }
 
 frame_unit <- function(frame, i) {
@@ -204,5 +253,5 @@ frame_unit <- function(frame, i) {
   pre <- if (ncol(frame$preload)) as.list(frame$preload[i, , drop = FALSE]) else list()
   list(unit = m$unit, psu = m$psu, ssu = m$ssu, stratum = m$stratum, interviewer = m$interviewer,
        supervisor = m$supervisor, lat = m$lat, lon = m$lon, start_time = m$start_time,
-       assignment_id = m$assignment_id, preload = pre)
+       assignment_id = m$assignment_id, irnd = m$irnd, preload = pre)
 }

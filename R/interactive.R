@@ -78,6 +78,8 @@ suso_mock_interactive <- function(answers = list()) {
   ver <- num("version", "Questionnaire version number for the export names", if (is.na(qn$hq_version)) 1 else qn$hq_version)
   out <- ask("out_dir", "Folder where <Q>_SuSoMock_<timestamp> is created", ".")
   zip <- yn("zip", "Also create HQ-style zip archives? (y/n)", "y")
+  fmt <- tolower(ask("format", "Export format: stata or tabular", "stata"))
+  if (!fmt %in% c("stata", "tabular")) { cat("Unknown format, using stata.\n"); fmt <- "stata" }
 
   des <- suso_design(n_psu = n_psu, ssu_per_psu = ssu, strata_var = strata_var, n_strata = n_strata,
                      psu_var = psu_var, ssu_var = ssu_var, frame = frame, n_interviewers = n_int,
@@ -87,7 +89,7 @@ suso_mock_interactive <- function(answers = list()) {
   n_tot <- if (is.null(frame)) n_psu * ssu else nrow(frame)
   cat(sprintf("\nAbout to generate %d interviews into '%s' (seed %s).\n", n_tot, out, seed))
   if (!yn("confirm", "Proceed? (y/n)", "y")) { cat("Cancelled.\n"); return(invisible(NULL)) }
-  res <- suso_mock(qn, design = des, config = cfg, out_dir = out, version = ver, seed = seed, zip = zip)
+  res <- suso_mock(qn, design = des, config = cfg, out_dir = out, version = ver, format = fmt, seed = seed, zip = zip)
   print(res)
   cat("\nReproduce non-interactively with the settings saved in ", file.path(res$export_dir, "mock_config.json"), "\n", sep = "")
   invisible(res)

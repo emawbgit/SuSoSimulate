@@ -17,10 +17,10 @@
 #   * main file ends with sssys_irnd, has__errors, interview__status, assignment__id
 # ---------------------------------------------------------------------------
 
-.status_labels <- c(Deleted = -1, Restored = 0, Created = 20, SupervisorAssigned = 40,
+.status_labels <- c(Restored = 0, Created = 20, SupervisorAssigned = 40,
   InterviewerAssigned = 60, RejectedBySupervisor = 65, ReadyForInterview = 80, SentToCapi = 85,
   Restarted = 95, Completed = 100, ApprovedBySupervisor = 120, RejectedByHeadquarters = 125,
-  ApprovedByHeadquarters = 130)
+  ApprovedByHeadquarters = 130, Deleted = -1)
 
 level_nodes <- function(qn, lk) {
   Filter(function(nd) nd$kind %in% c("question", "variable") &&
@@ -44,25 +44,35 @@ link_width <- function(qn, node) {
 col_specs <- function(qn, node) {
   v <- node$varname
   lab <- stata_label(node$label %||% node$text %||% v)
-  S <- function(name, type, label = lab, vl = NULL) list(name = name, type = type, label = label, vl = vl)
+  labt <- tab_label(node$label %||% node$text %||% v)        # Tabular .do: full text, no apostrophes
+  S <- function(name, type, label = lab, vl = NULL, cat = "", tlabel = labt)
+    list(name = name, type = type, label = label, vl = vl, cat = cat, tlabel = tlabel)
   if (node$kind == "variable") return(list(S(v, if (node$vtype %in% c(4, 5)) "str" else "num")))
   switch(node$qtype,
     numeric = list(S(v, "num", vl = if (nrow(node$options)) stats::setNames(node$options$code, node$options$label))),
     single = {
-      if (is.null(node$lnk)) return(list(S(v, "num", vl = stats::setNames(node$options$code, node$options$label))))
+      if (is.null(node$lnk)) return(list(S(v, "num", vl = stats::setNames(node$options$code, node$options$label),
+                                           cat = node$categories_name %||% "")))
       list(S(v, "num"))
     },
     multi = {
-      if (!is.null(node$lnk)) return(lapply(seq_len(link_width(qn, node)) - 1, function(k) S(paste0(v, "__", k), "num", "")))
+      if (!is.null(node$lnk)) return(lapply(seq_len(link_width(qn, node)) - 1, function(k) S(paste0(v, "__", k), "num", "", tlabel = "")))
       has_vl <- nzchar(node$var_label %||% "")
       lapply(seq_len(nrow(node$options)), function(j) S(paste0(v, "__", code_suffix(node$options$code[j])), "num",
-        if (has_vl) stata_label(paste0(node$var_label, ":", html_escape(node$options$label[j]))) else lab))
+        if (has_vl) stata_label(paste0(node$var_label, ":", html_escape(node$options$label[j]))) else lab,
+        tlabel = paste0(labt, ":", tab_label(node$options$label[j]))))
     },
+    area = c(list(S(v, "str")), lapply(c("area", "len", "num", "racc", "rfrq"), function(p)
+      S(paste0(v, "__", p), "num", stata_label(paste0(node$label %||% v, ": ", p)), tlabel = paste0(labt, ": ", p)))),
     gps = lapply(c("Latitude", "Longitude", "Accuracy", "Altitude", "Timestamp"), function(p)
-      S(paste0(v, "__", p), if (p == "Timestamp") "str" else "num", stata_label(paste0(node$label %||% v, ": ", p)))),
+      S(paste0(v, "__", p), if (p == "Timestamp") "str" else "num", stata_label(paste0(node$label %||% v, ": ", p)),
+        tlabel = paste0(labt, ": ", p))),
     list = {
       w <- if (is.na(node$max_answers)) 40L else as.integer(node$max_answers)
-      unlist(lapply(seq_len(w) - 1, function(k) list(S(paste0(v, "__", k), "str"), S(paste0(v, "__", k, "c"), "num"))), recursive = FALSE)
+      has_vl <- nzchar(node$var_label %||% "")
+      tl <- function(sfx) paste0(labt, ":", sfx)
+      unlist(lapply(seq_len(w) - 1, function(k) list(S(paste0(v, "__", k), "str", tlabel = tl(k)),
+                                                     S(paste0(v, "__", k, "c"), "num", tlabel = tl(paste0(k, "c"))))), recursive = FALSE)
     },
     list(S(v, "str")))
 }
@@ -95,19 +105,21 @@ node_values <- function(qn, node, st, rv, specs, cfg) {
     multi = {
       if (!is.null(node$lnk)) {
         cds <- vapply(v, function(r) as.numeric(r[length(r)]), 0)
-        return(lapply(seq_len(n), function(j) if (j <= length(cds)) cds[j] else NA_real_))
+        return(lapply(seq_len(n), function(j) if (j <= length(cds)) cds[j] else cfg$na_numeric))
       }
       oc <- node$options$code
-      if (inherits(v, "sus_yesno")) return(lapply(oc, function(cd) if (cd %in% v$yes) 1 else if (cd %in% v$no) 0 else NA_real_))
+      if (inherits(v, "sus_yesno")) return(lapply(oc, function(cd) if (cd %in% v$yes) 1 else if (cd %in% v$no) 0 else cfg$na_numeric))
       cds <- codes_of(v)
       if (isTRUE(node$ordered)) return(lapply(oc, function(cd) { p <- match(cd, cds); if (is.na(p)) 0 else p }))
       lapply(oc, function(cd) as.numeric(cd %in% cds))
     },
     gps = list(v$Latitude, v$Longitude, v$Accuracy, v$Altitude, fmt_date_val(v$Timestamp)),
+    area = if (inherits(v, "sus_area")) list(area_string(v), v$area, v$len, v$num, v$racc, v$rfrq) else
+      c(list(as.character(v)), rep(list(NA_real_), 5)),
     list = {
       cd <- as.numeric(names(v)); tx <- unname(unclass(v))
       w <- n / 2
-      unlist(lapply(seq_len(w), function(k) if (k <= length(cd)) list(tx[k], cd[k]) else list(cfg$na_string, NA_real_)), recursive = FALSE)
+      unlist(lapply(seq_len(w), function(k) if (k <= length(cd)) list(tx[k], cd[k]) else list(cfg$na_string, cfg$na_numeric)), recursive = FALSE)
     },
     date = list(fmt_date_val(v)),
     list(as.character(v)))
@@ -130,6 +142,11 @@ build_tables <- function(qn, states, meta, cfg, verbose = TRUE) {
     lk <- if (lks[li] == "main") "" else lks[li]
     lv <- qn$levels[[lks[li]]]
     nodes <- level_nodes(qn, lk)
+    if (!nzchar(lk) && isTRUE(cfg$cover_first %||% TRUE)) {   # cover questions and the interviewer question first
+      first <- vapply(nodes, function(nd) isTRUE(nd$featured), TRUE)
+      iv <- vapply(nodes, function(nd) identical(nd$varname, qn$interviewer_var), TRUE)
+      nodes <- c(nodes[first], nodes[iv & !first], nodes[!first & !iv])
+    }
     specs <- lapply(nodes, function(nd) col_specs(qn, nd))
     # id columns
     anc <- character()
@@ -192,6 +209,8 @@ build_tables <- function(qn, states, meta, cfg, verbose = TRUE) {
     for (sp in unlist(specs, recursive = FALSE)) {
       if (length(sp$vl)) df[[sp$name]] <- haven::labelled(df[[sp$name]], labels = dedupe_labels(sp$vl))
       attr(df[[sp$name]], "label") <- sp$label
+      if (nzchar(sp$cat %||% "")) attr(df[[sp$name]], "suso_cat") <- sp$cat
+      if (!identical(sp$tlabel, sp$label)) attr(df[[sp$name]], "suso_tlabel") <- sp$tlabel
     }
     if (!nzchar(lk)) {
       df$interview__status <- haven::labelled(df$interview__status, labels = .status_labels, label = "Status of the interview")
@@ -207,7 +226,7 @@ build_tables <- function(qn, states, meta, cfg, verbose = TRUE) {
 dedupe_labels <- function(vl) {
   vl <- vl[!is.na(vl)]
   vl <- vl[!duplicated(vl)]
-  nm <- strip_html(names(vl)); nm[!nzchar(nm)] <- as.character(vl[!nzchar(nm)])
+  nm <- html_escape(gsub("[\r\n]+", "", names(vl))); nm[!nzchar(nm)] <- as.character(vl[!nzchar(nm)])
   nm <- make.unique(substr(nm, 1, 32000))
   stats::setNames(as.numeric(vl), nm)
 }

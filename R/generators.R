@@ -137,6 +137,9 @@ gen_numeric <- function(G, node, rv) {
     if (!is.na(hi)) base <- min(hi, base)
     base
   }
+  # decimal questions about years, ages, counts, durations are answered in whole numbers in practice
+  if (!int && grepl("year|\\byrs?\\b|\\bage\\b|day|month|number of|count|how many|minute|hour|times", tolower(paste(node$varname, strip_html(node$text)))))
+    x <- round(x)
   finish_num(x, node)
 }
 
@@ -200,7 +203,7 @@ gen_value <- function(G, node, rv) {
     barcode = paste(sample(0:9, 13, TRUE), collapse = ""),
     picture = paste0(substr(new_guid(), 1, 12), ".jpg"),
     audio = paste0(substr(new_guid(), 1, 12), ".m4a"),
-    area = gen_area(G),
+    area = gen_area(G, node),
     date = {
       if (isTRUE(node$is_timestamp)) return(G$st$now)
       d0 <- as.Date(G$st$unit$start_time)
@@ -230,13 +233,34 @@ gps_anchor <- function(G) {
   G$st$anchor
 }
 
-gen_area <- function(G) {
+# Geography (area) answer near the dwelling: polygon / polyline / point(s), with the derived
+# measures HQ exports (area m2, length m, number of points, requested accuracy / frequency)
+gen_area <- function(G, node) {
   a <- gps_anchor(G)
-  lat <- a[1] + stats::rnorm(1, 0, 0.002); lon <- a[2] + stats::rnorm(1, 0, 0.002)
-  d <- stats::runif(4, 0.0003, 0.001)
-  pts <- rbind(c(lon, lat), c(lon + d[1], lat), c(lon + d[2], lat + d[3]), c(lon, lat + d[4]), c(lon, lat))
-  paste0("POLYGON((", paste(sprintf("%.7f %.7f", pts[, 1], pts[, 2]), collapse = ","), "))")
+  c0 <- c(a[2] + stats::rnorm(1, 0, 0.002), a[1] + stats::rnorm(1, 0, 0.002))   # lon, lat
+  geom <- node$geometry %||% 0L
+  auto <- isTRUE(node$geo_auto)
+  n <- switch(as.character(geom), "2" = 1L, "3" = sample(3:8, 1), if (auto) sample(25:90, 1) else sample(4:9, 1))
+  r <- sqrt(stats::rlnorm(1, log(800), 0.9) / pi)                                # metres
+  ang <- sort(stats::runif(n, 0, 2 * pi))
+  if (geom == 1L) ang <- seq(0, pi, length.out = n)
+  rad <- r * stats::runif(n, 0.8, 1.2)
+  m_lat <- 111320; m_lon <- 111320 * cos(c0[2] * pi / 180)
+  xy <- cbind(rad * cos(ang), rad * sin(ang))                                     # metres around c0
+  if (geom == 2L) xy[] <- 0
+  sus_area(cbind(c0[1] + xy[, 1] / m_lon, c0[2] + xy[, 2] / m_lat), xy, geom, auto)
 }
+
+sus_area <- function(lonlat, xy, geom = 0L, auto = FALSE) {
+  n <- nrow(xy)
+  seg <- function(p) sum(sqrt(rowSums(diff(p)^2)))
+  closed <- rbind(xy, xy[1, ])
+  area <- if (geom == 0L && n > 2) abs(sum(xy[, 1] * xy[c(2:n, 1), 2] - xy[c(2:n, 1), 1] * xy[, 2])) / 2 else 0
+  len <- if (geom == 0L && n > 2) seg(closed) else if (geom == 1L) seg(xy) else 0
+  structure(list(coords = lonlat, area = area, len = len, num = n,
+                 racc = if (auto) 10 else NA_real_, rfrq = if (auto) 5 else NA_real_), class = "sus_area")
+}
+area_string <- function(v) paste(sprintf("%.15g,%.15g", v$coords[, 1], v$coords[, 2]), collapse = ";")
 
 # Generate, then re-draw until hard validations pass (or inject an error)
 gen_valid <- function(G, node, rv) {

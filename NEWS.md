@@ -1,3 +1,28 @@
+# SuSoSimulate 0.4.0
+
+## Export
+* **Tabular format**: `suso_mock(format = "tabular")` (and in the app/wizard) writes `<Q>_<v>_Tabular_All` with a `.tab` and a `.do` per file, as HQ does: UTF-8 BOM, CRLF, `-999999999` / `##N/A##` for enabled-but-unanswered, `.do` labels with the full question text and `text:option` for multi-select/list columns, reusable categories under their name. Matches a real HQ 24.06 Tabular export line by line.
+* Export folder named with the version: `<Q>_<version>_SuSoMock_<timestamp>` (also the app download).
+* Stata: enabled-but-unanswered numerics are `.a`, as in HQ (were `.`). Value labels keep their text verbatim (HTML-escaped, whitespace kept, also from category `.xlsx`).
+* Geography (area) questions: polygon/polyline/point answers near the dwelling with `__area`, `__len`, `__num`, `__racc`, `__rfrq`; `self.Area`, `.Length`, `.NumberOfPoints` in expressions.
+* `interview__errors` / `interview__comments` carry one `idN` column per roster nesting level; warnings are no longer listed as errors (`has__errors` now equals the errors in `interview__errors`).
+* `assignments.tab` (HQ preload format) next to the export.
+
+## Consistency
+* New `suso_validate_mock()`: cross-checks ids, statuses, error and comment counts, assignments, interviewers, preload and paradata across all files.
+* Interviewer question (e.g. a single-select of enumerator names) detected or set with `suso_design(interviewer_var = )`; its option labels are the interviewer logins in the data, paradata, actions and assignments.
+* Cover (identifying) questions and the interviewer question come first in the main file (`suso_mock_config(cover_first = TRUE)`; `FALSE` keeps HQ's order).
+
+## Sampling
+* `suso_design(boundary = )`: survey area as GeoJSON (file/string) or lon-lat matrix; PSU centroids are drawn inside it. In the app: draw it on OpenStreetMap or upload a GeoJSON.
+
+## Expressions
+* `new decimal?[]{...}` (nullable typed arrays), `Quest.IRnd()` (= `sssys_irnd`), `.RosterVector`.
+
+## App
+* Stata/Tabular choice; questionnaire upload limited to HQ/Designer zips and JSON (PDF removed from the app; still readable in R).
+* The total number of interviews always reflects the current inputs (empty fields included), and results generated with older settings are flagged.
+
 # SuSoSimulate 0.3.1
 
 ## Bug fixes

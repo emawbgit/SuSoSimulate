@@ -18,7 +18,9 @@ suso_design(
   start_date = Sys.Date(),
   interviews_per_day = 4,
   bbox = c(29.5, -1.5, 35, 4.2),
-  assignment_per = c("interview", "psu")
+  assignment_per = c("interview", "psu"),
+  interviewer_var = NULL,
+  boundary = NULL
 )
 }
 \arguments{
@@ -47,6 +49,16 @@ after questionnaire variables are preloaded; optional `.psu`, `.stratum`.}
 \item{bbox}{GPS bounding box `c(xmin, ymin, xmax, ymax)` for PSU centroids.}
 
 \item{assignment_per}{"interview" (one assignment each) or "psu".}
+
+\item{interviewer_var}{Question recording the interviewer (e.g. a single-select of
+enumerator names). It is filled with the interviewer the assignment belongs to; for a
+single-select its option labels become the interviewer logins, so data, paradata and
+system files agree. `NULL`: detected from names such as "enumerator"/"interviewer";
+`NA`: none.}
+
+\item{boundary}{Survey area for PSU centroids: a GeoJSON file or string (e.g. drawn on
+geojson.io or the app's OpenStreetMap), a list parsed from GeoJSON, or a two-column
+lon/lat matrix. Overrides `bbox`.}
 }
 \description{
 Builds the sampling frame: strata -> PSUs -> secondary units (households),

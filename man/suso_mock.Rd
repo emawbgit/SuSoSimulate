@@ -10,6 +10,7 @@ suso_mock(
   config = suso_mock_config(),
   out_dir = ".",
   version = NULL,
+  format = c("stata", "tabular"),
   seed = NULL,
   zip = TRUE,
   verbose = TRUE,
@@ -24,12 +25,15 @@ or a `suso_questionnaire` object.}
 
 \item{config}{A [suso_mock_config()] object.}
 
-\item{out_dir}{Folder in which the export folder `<Questionnaire>_SuSoMock_<timestamp>`
+\item{out_dir}{Folder in which the export folder `<Questionnaire>_<version>_SuSoMock_<timestamp>`
 is created (default: working directory). `NULL` returns data without writing.}
 
 \item{version}{Questionnaire version number used in the export names
 (`<Questionnaire>_<version>_STATA_All`), as HQ numbers each imported version.
 Default: the version detected from an HQ export input, otherwise 1.}
+
+\item{format}{Export format, as chosen in HQ: `"stata"` (`.dta`, `<Q>_<v>_STATA_All`)
+or `"tabular"` (`.tab` + `.do`, `<Q>_<v>_Tabular_All`).}
 
 \item{seed}{Random seed for reproducibility.}
 

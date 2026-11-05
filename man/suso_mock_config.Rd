@@ -25,10 +25,11 @@ suso_mock_config(
   max_passes = 5,
   max_tries = 25,
   max_roster_rows = 200,
-  na_numeric = NA_real_,
+  na_numeric = haven::tagged_na("a"),
   na_string = "##N/A##",
   null_share = 0.25,
   special_value_rate = 0.03,
+  cover_first = TRUE,
   restart_rate = 0.15,
   rejection_rate = 0.2,
   pause_rate = 0.3,
@@ -82,7 +83,8 @@ least-used options (drives routing coverage).}
 
 \item{max_roster_rows}{Hard cap on rows of any roster.}
 
-\item{na_numeric}{Value for enabled-but-unanswered numerics (SuSo Stata: NA).}
+\item{na_numeric}{Value for enabled-but-unanswered numerics. Default: Stata extended
+missing `.a` (as HQ exports it); written as -999999999 in Tabular exports.}
 
 \item{na_string}{Value for enabled-but-unanswered strings (SuSo: "##N/A##").}
 
@@ -91,6 +93,10 @@ are left unanswered (times `target_prob`), so null branches get covered.}
 
 \item{special_value_rate}{Share of numeric answers drawn from the question's special
 values (e.g. -98 "Don't know"), when it has any (still subject to validations).}
+
+\item{cover_first}{Put the identifying (cover) questions and the interviewer question
+right after `interview__key`/`interview__id` in the main file, in the order of the
+assignment. `FALSE` keeps HQ's document order.}
 
 \item{restart_rate}{Share of interviews the interviewer re-opens after completing
 (`Completed > Paused > Restarted > ... > Completed` in paradata).}

@@ -38,6 +38,9 @@ stata_label <- function(x, n = 80) {
   ifelse(nchar(x) > n, substr(x, 1, n), x)
 }
 
+# Tabular .do labels: HTML tags and line breaks removed, apostrophes dropped, no length cap
+tab_label <- function(x) gsub("'", "", gsub("[\r\n]+", "", gsub("<[^>]+>", "", x %||% "")), fixed = TRUE)
+
 # Option code -> SuSo multi-select column suffix (negative codes become n<abs>)
 code_suffix <- function(code) {
   s <- format(abs(code), scientific = FALSE, trim = TRUE)

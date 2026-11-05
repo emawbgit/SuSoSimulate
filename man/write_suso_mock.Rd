@@ -8,6 +8,7 @@ write_suso_mock(
   x,
   out_dir = ".",
   version = x$version,
+  format = x$format \%||\% "stata",
   zip = TRUE,
   timestamp = Sys.time(),
   verbose = TRUE
@@ -19,6 +20,8 @@ write_suso_mock(
 \item{out_dir}{Folder in which the export folder is created.}
 
 \item{version}{Questionnaire version (default: the one used by [suso_mock()]).}
+
+\item{format}{`"stata"` or `"tabular"` (default: the one used by [suso_mock()]).}
 
 \item{zip}{Also create the HQ-style zip archives.}
 

@@ -99,7 +99,7 @@ load_categories <- function(cats, dir) {
     if (!length(hit)) next
     f <- hit[1]; ext <- tolower(tools::file_ext(f))
     df <- tryCatch({
-      if (ext %in% c("xlsx", "xls")) { check_dependencies(xlsx = TRUE); as.data.frame(readxl::read_excel(f)) }
+      if (ext %in% c("xlsx", "xls")) { check_dependencies(xlsx = TRUE); as.data.frame(readxl::read_excel(f, trim_ws = FALSE)) }
       else utils::read.delim(f, sep = if (ext == "csv") "," else "\t", stringsAsFactors = FALSE)
     }, error = function(e) NULL)
     if (is.null(df) || !nrow(df)) next
@@ -154,6 +154,8 @@ qn_from_document <- function(doc, cat_dir = NULL, verbose = TRUE, raw_json = NUL
   qn$document_json <- raw_json %||% as.character(jsonlite::toJSON(doc, auto_unbox = TRUE, null = "null", digits = NA))
   qn$macros  <- parse_macros(doc$Macros)
   qn$categories <- load_categories(doc$Categories, cat_dir)
+  qn$category_names <- stats::setNames(lapply(doc$Categories %||% list(), function(c) c$Name %||% ""),
+                                       vapply(doc$Categories %||% list(), function(c) tolower(c$Id %||% ""), ""))
   qn$category_raw <- attr(qn$categories, "raw") %||% list()
   qn$nodes   <- new.env(hash = TRUE)
   qn$by_name <- new.env(hash = TRUE)
@@ -224,6 +226,7 @@ qn_from_document <- function(doc, cat_dir = NULL, verbose = TRUE, raw_json = NUL
         cid <- it$CategoriesId %||% it$Properties$CategoriesId
         if (!is.null(cid)) {
           node$categories_id <- tolower(cid)
+          node$categories_name <- qn$category_names[[tolower(cid)]] %||% ""
           cats <- qn$categories[[tolower(cid)]]
           if (!is.null(cats)) node$options <- cats
           else { warn("Reusable categories ", cid, " not found for '", node$varname, "': using placeholder codes 1-5")
@@ -243,6 +246,10 @@ qn_from_document <- function(doc, cat_dir = NULL, verbose = TRUE, raw_json = NUL
         node$ordered <- isTRUE(it$AreAnswersOrdered)
         node$is_timestamp <- isTRUE(it$IsTimestamp)
         node$mask <- it$Mask %||% ""
+        if (node$qtype == "area") {                       # GeometryType 0 polygon, 1 polyline, 2 point, 3 multipoint
+          node$geometry <- as.integer(it$Properties$GeometryType %||% 0L)
+          node$geo_auto <- identical(as.integer(it$Properties$GeometryInputMode %||% 0L), 1L)   # automatic (walking) mode
+        }
         qn$nodes[[id]] <- node; qn$order <- c(qn$order, id)
       }
       ids <- c(ids, id)
