@@ -1,3 +1,8 @@
+# SuSoSimulate 0.5.1
+
+* Paradata checked against a real 26.07 export: `InterviewCreated` now carries the assignment id; geography (`lon,lat;…`), linked single/multi and yes/no values already matched.
+* README: limitations trimmed.
+
 # SuSoSimulate 0.5.0
 
 ## Export

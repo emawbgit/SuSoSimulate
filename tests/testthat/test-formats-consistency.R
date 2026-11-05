@@ -116,4 +116,6 @@ test_that("documented HQ conventions: geography formats, GPS UTC time, DateTime 
   asg <- utils::read.delim(file.path(r$export_dir, "assignments.tab"), fileEncoding = "UTF-8-BOM", check.names = FALSE)
   expect_false("assignment__id" %in% names(asg))
   expect_true(all(c("_responsible", "_quantity") %in% names(asg)))
+  cr <- p[p$event == "InterviewCreated", ]                         # HQ 26.x: assignment id in InterviewCreated
+  expect_equal(cr$parameters, as.character(m$assignment__id[match(cr$interview__id, m$interview__id)]))
 })

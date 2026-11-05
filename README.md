@@ -93,7 +93,7 @@ install.packages(".", repos = NULL, type = "source")
 ### Option C — install from a source tarball
 
 ```r
-install.packages("SuSoSimulate_0.5.0.tar.gz", repos = NULL, type = "source")
+install.packages("SuSoSimulate_0.5.1.tar.gz", repos = NULL, type = "source")
 ```
 
 ### Check the installation
@@ -128,7 +128,7 @@ Or from the command line, inside the clone:
 Rscript -e 'testthat::test_local()'
 ```
 
-Expected result: `[ FAIL 0 | WARN 0 | SKIP 1 | PASS 286 ]` (the skipped test runs only in a non-UTF-8 locale). The suite has ten files:
+Expected result: `[ FAIL 0 | WARN 0 | SKIP 1 | PASS 287 ]` (the skipped test runs only in a non-UTF-8 locale). The suite has ten files:
 
 | File | What it checks |
 |---|---|
@@ -156,7 +156,7 @@ The edge-case fixture covers:
 
 ```bash
 R CMD build .
-R CMD check --no-manual SuSoSimulate_0.5.0.tar.gz
+R CMD check --no-manual SuSoSimulate_0.5.1.tar.gz
 ```
 
 Expected: `Status: OK`.
@@ -536,11 +536,11 @@ These reproduce a Survey Solutions 24.x Stata and Tabular export.
 
 | Event | Responsible / role | Parameters |
 |---|---|---|
-| `InterviewCreated`, `SupervisorAssigned`, `InterviewModeChanged`, `InterviewerAssigned` | interviewer / 1 | –, –, `CAPI\|\|`, interviewer login |
+| `InterviewCreated`, `SupervisorAssigned`, `InterviewModeChanged`, `InterviewerAssigned` | interviewer / 1 | assignment id, –, `CAPI\|\|`, interviewer login |
 | `KeyAssigned` | blank / 0 | interview key |
 | `AnswerSet` (preloaded) | interviewer / 1, at creation time | `var\|\|value\|\|rv` |
 | `Resumed` / `Paused` | interviewer / 1 | `Tablet` / – |
-| `AnswerSet` | interviewer / 1 | `var\|\|value\|\|rv`. rv `1,3`; multi `1, 2`; yes/no `1, 2\|3`; list `a\|b`; GPS `lat,lon[acc]alt`; timestamp `YYYY-MM-DD hh:mm:ss` |
+| `AnswerSet` | interviewer / 1 | `var\|\|value\|\|rv`. rv `1,3`; multi `1, 2`; yes/no `1, 2\|3`; linked single `2`, linked multi `1\|3` (source row codes); geography `lon,lat;lon,lat;…`; list `a\|b`; GPS `lat,lon[acc]alt`; timestamp `YYYY-MM-DD hh:mm:ss` |
 | `CommentSet` | interviewer / 1 | `var\|\|comment[\|\|rv]` |
 | `AnswerRemoved` | interviewer / 1 | `var\|\|rv` |
 | `VariableDisabled`, `QuestionDeclaredValid`, `QuestionDeclaredInvalid`, `VariableSet` | blank / 0, at the final completion, in this order | `var\|\|rv`, `var\|\|rv`, `var\|\|rv\|\|validation index`, `var\|\|value\|\|rv` |
@@ -619,7 +619,7 @@ The conventions were reviewed against the official documentation ([docs.mysurvey
 | Export formats | Tab: `.tab` + a `.do` per file; Stata: `.dta` version 14, Unicode | Same |
 | Variable names | English letters, digits, underscore; the questionnaire variable names the main file | Same (file names are kept ASCII) |
 | System files | `assignment__actions`, `interview__actions`, `__comments`, `__diagnostics`, `__errors`, codes for roles, actions, statuses | Same, labelled as in HQ 24.06 |
-| Paradata | `paradata.tab`, `paradata.do`, `export__readme.txt`, `export__info.json`; columns and event names; roster address `2,5,0` | Same; parameter details follow the real 24.06 export where the documentation is older (e.g. `VariableDisabled var\|\|rv`, empty `InterviewCreated`) |
+| Paradata | `paradata.tab`, `paradata.do`, `export__readme.txt`, `export__info.json`; columns and event names; roster address `2,5,0` | Same; parameter details follow the real 24.06 export where the documentation is older (e.g. `VariableDisabled var\|\|rv`). Checked again against a 26.07 paradata export: `InterviewCreated` carries the assignment id; geography and linked-question values match |
 | DateTime values | Paradata: `M/D/YYYY h:m:s AM/PM` for DateTime variables, `YYYY-MM-DD hh:mm:ss` for timestamp answers; GPS timestamps in UTC | Same |
 | Geography | Geometry string, WKT (default) or GeoJSON; `__area`, `__len`, `__num` | Same, selectable with `geo_format` |
 | Assignments upload | Tab file with the identifying variables, `_responsible`, `_quantity` | `assignments.tab` |
@@ -653,13 +653,10 @@ The test also translated every one of the questionnaire's 237 enabling condition
 ## Limitations
 
 - **Lookup tables.** `table[row].col` and `LinkedFilterExpression` with `@current` are not translated. They fall back to a random draw and are flagged in `$coverage$branches$issue`.
-- **Unverified formats.** The export layout of single-selects linked to *nested* rosters, and the paradata value of geography answers, have not been checked against a real export. Please open an issue with an example if they differ.
-- **Progress.** The console and the app show elapsed time and an estimate of the time left (generation), or the most time left (coverage repair, bounded by `repair_time`).
+- **Unverified format.** Questions linked to a *nested* roster (answer = a row address such as `1,2`) have not been checked against a real export. Please open an issue with an example if they differ.
 - **The app runs one job at a time.** While data are being generated, the app cannot react to other inputs; changes made meanwhile are applied once the run ends, and tab 4 then shows that the results are out of date.
-- **Numeric special values** are generated only when the validations accept them.
 - **Speed.** About 0.1 s per interview on simple questionnaires and about 1.5 s on heavy ones: 57-row fixed rosters with nested LINQ conditions are evaluated many times per pass. Coverage repair adds candidate interviews, capped by `repair_budget` and `repair_time`.
 - **PDF input** is heuristic. Always prefer `document.json`.
-- **Not a statistical model.** Answer distributions are plausible but synthetic. Don't use the output for substantive analysis.
 
 ---
 
@@ -719,7 +716,7 @@ Please open an issue on the [GitHub repository](https://github.com/emawbgit/SuSo
 
 If you use SuSoSimulate in your research, please cite:
 
-Clemente, E. "SuSoSimulate: Mock data and paradata generator for Survey Solutions questionnaires." https://github.com/emawbgit/SuSoSimulate, version 0.5.0.
+Clemente, E. "SuSoSimulate: Mock data and paradata generator for Survey Solutions questionnaires." https://github.com/emawbgit/SuSoSimulate, version 0.5.1.
 
 In R: `citation("SuSoSimulate")`.
 

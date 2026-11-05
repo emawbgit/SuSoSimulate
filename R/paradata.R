@@ -126,7 +126,7 @@ build_paradata <- function(qn, states, meta, cfg, design) {
 
     # creation, preload, interview
     t0 <- u$start_time; tc <- t0 - stats::runif(1, 5, 90)
-    add("InterviewCreated", int, 1L, tc)
+    add("InterviewCreated", int, 1L, tc, fmt_num(meta$assignment_id[i]))   # HQ 26.x logs the assignment id (24.06 left it empty)
     add("SupervisorAssigned", int, 1L, tc)
     add("InterviewModeChanged", int, 1L, tc, "CAPI||")
     add("InterviewerAssigned", int, 1L, tc, int)
