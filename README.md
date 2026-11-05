@@ -87,7 +87,7 @@ install.packages(".", repos = NULL, type = "source")
 ### Option C — install from a source tarball
 
 ```r
-install.packages("SuSoSimulate_0.2.0.tar.gz", repos = NULL, type = "source")
+install.packages("SuSoSimulate_0.3.0.tar.gz", repos = NULL, type = "source")
 ```
 
 ### Check the installation
@@ -122,7 +122,7 @@ Or from the command line, inside the clone:
 Rscript -e 'testthat::test_local()'
 ```
 
-Expected result: `[ FAIL 0 | WARN 0 | SKIP 0 | PASS 111 ]`. The suite has six files:
+Expected result: `[ FAIL 0 | WARN 0 | SKIP 0 | PASS 191 ]`. The suite has seven files:
 
 | File | What it checks |
 |---|---|
@@ -131,6 +131,7 @@ Expected result: `[ FAIL 0 | WARN 0 | SKIP 0 | PASS 111 ]`. The suite has six fi
 | `test-edge-cases.R` | A hostile fixture questionnaire (`tests/testthat/fixtures/edge_cases.json`), checked for referential integrity and routing semantics across all files (see below) |
 | `test-validation.R` | Clear errors for invalid arguments and malformed files; safe helpers; factor columns in frames; paradata encoding (UTF-8 BOM, CRLF); zip output |
 | `test-app.R` | The Shiny server workflow (load → generate → download zip / settings → re-upload settings → bad file), and a run of the R script the app writes |
+| `test-export-layout.R` | Export folder `<Q>_SuSoMock_<timestamp>`, versioned zip names and zip-root contents, `export__info.json`, re-reading the exported STATA zip (version detection), paradata event order and roles (`suso_read_paradata()`) |
 | `helper-integrity.R` | Shared checker: unique keys, every roster row has a parent row, no orphan interviews, sequential paradata order, parseable timestamps |
 
 The edge-case fixture covers:
@@ -146,7 +147,7 @@ The edge-case fixture covers:
 
 ```bash
 R CMD build .
-R CMD check --no-manual SuSoSimulate_0.2.0.tar.gz
+R CMD check --no-manual SuSoSimulate_0.3.0.tar.gz
 ```
 
 Expected: `Status: OK`.
