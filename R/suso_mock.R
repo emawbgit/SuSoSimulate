@@ -267,6 +267,10 @@ write_questionnaire_content <- function(qn, dir) {
     dir.create(file.path(tmp, "Categories"))
     for (f in names(qn$category_raw)) writeBin(qn$category_raw[[f]], file.path(tmp, "Categories", f))
   }
+  if (length(qn$lookup_raw)) {
+    dir.create(file.path(tmp, "Lookup Tables"))
+    for (f in names(qn$lookup_raw)) writeBin(qn$lookup_raw[[f]], file.path(tmp, "Lookup Tables", f))
+  }
   dir.create(dir, showWarnings = FALSE)
   zip_dir(tmp, file.path(dir, "content.zip"))
 }
@@ -322,9 +326,11 @@ print.suso_mock <- function(x, ...) {
   cat(sprintf("  Branch coverage: %.1f%% of outcomes (%d/%d conditions both ways) | Option coverage: %.1f%%\n",
               100 * s[["branch_coverage"]], as.integer(s[["covered"]]), as.integer(s[["conditions"]]), 100 * s[["option_coverage"]]))
   b <- x$coverage$branches
-  if (nrow(b) && any(b$status != "covered")) {
+  un <- if (nrow(b)) b$status != "covered" & startsWith(b$note, "unreachable") else logical()
+  if (any(un)) cat(sprintf("  %d conditions cannot be covered (constant switches, validation bounds): see $coverage$branches$note\n", sum(un)))
+  if (nrow(b) && any(b$status != "covered" & !un)) {
     cat("  Not fully covered:\n")
-    print(utils::head(b[b$status != "covered", c("item", "level", "status", "n_true", "n_false", "note")], 20), row.names = FALSE)
+    print(utils::head(b[b$status != "covered" & !un, c("item", "level", "status", "n_true", "n_false", "note")], 20), row.names = FALSE)
   }
   iss <- if (nrow(b)) sum(nzchar(b$issue)) else 0
   if (iss) cat(sprintf("  %d conditions had translation/runtime issues (see $coverage$branches$issue)\n", iss))

@@ -130,6 +130,7 @@ gen_numeric <- function(G, node, rv) {
     }
     return(gen_count(G, node, lo, hi))
   }
+  if (length(node$domain)) return(finish_num(pick(node$domain), node))   # see finalize_questionnaire
   # numeric special values (e.g. -98 "Don't know")
   if (nrow(node$options) && stats::runif(1) < G$cfg$special_value_rate) return(finish_num(pick(node$options$code), node))
   tg <- node$targets
@@ -194,6 +195,7 @@ gen_value <- function(G, node, rv) {
       }
       o <- available_options(G, node, rv)
       if (!nrow(o)) return(NULL)
+      if (!is.null(node$gate) && node$gate %in% o$code && stats::runif(1) < 0.85) return(node$gate)   # gatekeeper (household found, consent)
       choose_codes(G, node, o$code, 1L)
     },
     multi = {

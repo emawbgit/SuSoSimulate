@@ -1,3 +1,23 @@
+# SuSoSimulate 0.6.0
+
+Learned from a real HQ 26.07 export with lookup tables (614 questions, 14 roster levels).
+
+## Questionnaire logic
+* Lookup tables: read from `Lookup Tables/*.txt`, used as `table[rowcode].column`, `ContainsKey`, `Count`, `Keys`, LINQ over the rows; re-exported in `Questionnaire/content.zip`.
+* HQ 26.x `document.json` (`"$type"` entries in the macro and lookup-table dictionaries) no longer stops the reader.
+* Comma-list macros (`$codes = 1,2,6,9` in `InList($codes)`) are substituted as text, as SuSo does.
+* Numeric ids used by an option filter to select a slice of a list (`household_id` picking its members from a preloaded name list) are drawn from the list's parent codes.
+* Gatekeeper single-selects (household found, consent) take the answer that opens the questionnaire 85% of the time.
+
+## Coverage
+* Conditions on calculated variables set to a constant, items inside a module switched off that way, and `x == c` on a question never enabled are marked `unreachable` and skipped by the repair; `print()` counts them separately.
+
+## Export (as in the 26.07 export)
+* Multi-select combo boxes: `var__0..var__{n-1}` holding the selected codes (n = MaxAllowedAnswers, else the options up to 200), value-labelled.
+* Text-list columns labelled `label:k` / `label:kc`; multi-select columns always `label:Option`.
+* `& < >` in Stata variable labels written as HTML entities; duplicate value-label texts kept (no `.1` suffixes).
+* Assignment action codes 10-13 (`TargetAreaChanged`, `Completed`, `Closed`, `Reopened`).
+
 # SuSoSimulate 0.5.1
 
 * Paradata checked against a real 26.07 export: `InterviewCreated` now carries the assignment id; geography (`lon,lat;…`), linked single/multi and yes/no values already matched.

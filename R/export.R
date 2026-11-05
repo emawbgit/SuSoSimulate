@@ -41,10 +41,16 @@ link_width <- function(qn, node) {
   if (is.null(w) || is.na(w) || w > 200) 40L else as.integer(w)
 }
 
+# Multi-select combo box (HQ 26.x): one column per answer slot, MaxAllowedAnswers wide, else
+# one per option up to 200
+combo_multi <- function(node) isTRUE(node$combo) && !isTRUE(node$yesno) && is.null(node$lnk)
+combo_width <- function(node) as.integer(if (is.na(node$max_answers %||% NA)) min(nrow(node$options), 200L) else node$max_answers)
+
 col_specs <- function(qn, node) {
   v <- node$varname
   lab <- stata_label(node$label %||% node$text %||% v)
   labt <- tab_label(node$label %||% node$text %||% v)        # Tabular .do: full text, no apostrophes
+  base <- if (nzchar(node$var_label %||% "")) node$var_label else node$label %||% node$text %||% v   # multi/list columns: base:option
   S <- function(name, type, label = lab, vl = NULL, cat = "", tlabel = labt)
     list(name = name, type = type, label = label, vl = vl, cat = cat, tlabel = tlabel)
   if (node$kind == "variable") return(list(S(v, if (node$vtype %in% c(4, 5)) "str" else "num")))
@@ -57,9 +63,14 @@ col_specs <- function(qn, node) {
     },
     multi = {
       if (!is.null(node$lnk)) return(lapply(seq_len(link_width(qn, node)) - 1, function(k) S(paste0(v, "__", k), "num", "", tlabel = "")))
-      has_vl <- nzchar(node$var_label %||% "")
+      if (combo_multi(node)) {                      # combo box: var__0..var__{w-1} holding the selected codes
+        vl <- stats::setNames(node$options$code, node$options$label)
+        return(lapply(seq_len(combo_width(node)) - 1, function(k) S(paste0(v, "__", k), "num",
+          stata_label(paste0(base, ":", k)), vl = vl, cat = node$categories_name %||% "",
+          tlabel = paste0(labt, ":", k))))
+      }
       lapply(seq_len(nrow(node$options)), function(j) S(paste0(v, "__", code_suffix(node$options$code[j])), "num",
-        if (has_vl) stata_label(paste0(node$var_label, ":", html_escape(node$options$label[j]))) else lab,
+        stata_label(paste0(base, ":", node$options$label[j])),
         tlabel = paste0(labt, ":", tab_label(node$options$label[j]))))
     },
     area = c(list(S(v, "str")), lapply(c("area", "len", "num", "racc", "rfrq"), function(p)
@@ -69,10 +80,10 @@ col_specs <- function(qn, node) {
         tlabel = paste0(labt, ": ", p))),
     list = {
       w <- if (is.na(node$max_answers)) 40L else as.integer(node$max_answers)
-      has_vl <- nzchar(node$var_label %||% "")
       tl <- function(sfx) paste0(labt, ":", sfx)
-      unlist(lapply(seq_len(w) - 1, function(k) list(S(paste0(v, "__", k), "str", tlabel = tl(k)),
-                                                     S(paste0(v, "__", k, "c"), "num", tlabel = tl(paste0(k, "c"))))), recursive = FALSE)
+      sl <- function(sfx) stata_label(paste0(base, ":", sfx))      # label:k, as for multi-selects
+      unlist(lapply(seq_len(w) - 1, function(k) list(S(paste0(v, "__", k), "str", sl(k), tlabel = tl(k)),
+                                                     S(paste0(v, "__", k, "c"), "num", sl(paste0(k, "c")), tlabel = tl(paste0(k, "c"))))), recursive = FALSE)
     },
     list(S(v, "str")))
 }
@@ -107,6 +118,7 @@ node_values <- function(qn, node, st, rv, specs, cfg) {
         cds <- vapply(v, function(r) as.numeric(r[length(r)]), 0)
         return(lapply(seq_len(n), function(j) if (j <= length(cds)) cds[j] else cfg$na_numeric))
       }
+      if (combo_multi(node)) { cds <- codes_of(v); return(lapply(seq_len(n), function(j) if (j <= length(cds)) as.numeric(cds[j]) else cfg$na_numeric)) }
       oc <- node$options$code
       if (inherits(v, "sus_yesno")) return(lapply(oc, function(cd) if (cd %in% v$yes) 1 else if (cd %in% v$no) 0 else cfg$na_numeric))
       cds <- codes_of(v)
@@ -227,7 +239,7 @@ dedupe_labels <- function(vl) {
   vl <- vl[!is.na(vl)]
   vl <- vl[!duplicated(vl)]
   nm <- html_escape(gsub("[\r\n]+", "", names(vl))); nm[!nzchar(nm)] <- as.character(vl[!nzchar(nm)])
-  nm <- make.unique(substr(nm, 1, 32000))
+  nm <- substr(nm, 1, 32000)                      # duplicate texts are kept, as HQ does
   stats::setNames(as.numeric(vl), nm)
 }
 

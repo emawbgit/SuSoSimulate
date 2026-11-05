@@ -26,7 +26,8 @@
   OpenedBySupervisor = 17, ClosedBySupervisor = 18, InterviewSwitchedToCawiMode = 19,
   InterviewSwitchedToCapiMode = 20, InterviewReceivedBySupervisor = 21)
 .assign_action_labels <- c(Unknown = 0, Created = 1, Archived = 2, Deleted = 3, ReceivedByTablet = 4,
-  Unarchived = 5, AudioRecordingChanged = 6, Reassigned = 7, QuantityChanged = 8, WebModeChanged = 9)
+  Unarchived = 5, AudioRecordingChanged = 6, Reassigned = 7, QuantityChanged = 8, WebModeChanged = 9,
+  TargetAreaChanged = 10, Completed = 11, Closed = 12, Reopened = 13)                 # 10-13: HQ 26.x
 
 para_value <- function(node, v) {
   clean <- function(s) gsub("[\t\r\n]+", " ", s)

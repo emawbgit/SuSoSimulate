@@ -1,7 +1,7 @@
 Package: SuSoSimulate
 Type: Package
 Title: Mock Data and Paradata Generator for Survey Solutions Questionnaires
-Version: 0.5.1
+Version: 0.6.0
 Authors@R: person("Emanuele", "Clemente", email = "emanueleclemente91@gmail.com", role = c("aut", "cre"))
 Description: Reads a Survey Solutions questionnaire (Designer document.json,
     Designer or Headquarters export archive, or - experimentally - the PDF

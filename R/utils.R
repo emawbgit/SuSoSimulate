@@ -32,9 +32,10 @@ strip_html <- function(x) {
   trimws(gsub("\\s+", " ", x))
 }
 
-# SuSo variable labels: HTML tags removed, whitespace kept verbatim, cut at 80 chars
+# SuSo variable labels: HTML tags removed, whitespace kept verbatim, & < > escaped (as in a
+# 26.07 export), cut at 80 chars
 stata_label <- function(x, n = 80) {
-  x <- gsub("<[^>]+>", "", x %||% "")
+  x <- html_escape(gsub("<[^>]+>", "", x %||% ""))
   ifelse(nchar(x) > n, substr(x, 1, n), x)
 }
 

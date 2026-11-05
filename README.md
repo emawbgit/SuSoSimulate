@@ -46,7 +46,7 @@ With it you can:
 | **Input** | Any HQ export zip (Stata, Tabular, ...: the questionnaire, categories and attachments are embedded under `Questionnaire/content.zip`); `content.zip` itself; a Designer zip; `document.json`; an unpacked folder. In R only, experimentally, the PDF printout |
 | **Question types** | Numeric (integer/decimal, special values), single-select (incl. cascading, combo box, filtered, linked), multi-select (plain, ordered, yes/no, linked), text, masked text, text list, date, timestamp, GPS, barcode, picture, audio, area, calculated variables, static text |
 | **Rosters** | Numeric-, multi-select-, yes/no-, list-triggered and fixed rosters, nested to any depth; rosters sharing a trigger are merged into one level exactly as SuSo does |
-| **Logic** | Translates C# enabling conditions, validations, option filters, linked filters, macros and calculated variables into R, with C# null semantics |
+| **Logic** | Translates C# enabling conditions, validations, option filters, linked filters, macros, lookup tables and calculated variables into R, with C# null semantics |
 | **Coverage** | Generators deliberately steer toward branch constants; a repair loop swaps redundant interviews for ones that hit missing branch outcomes; a report flags anything uncovered or provably unreachable |
 | **Sampling** | Strata → PSUs → secondary units, preload of identifying questions, interviewer/supervisor teams (logins taken from the questionnaire's enumerator question), fieldwork calendar, PSU GPS centroids inside a survey boundary drawn on OpenStreetMap or loaded from GeoJSON, or a user-supplied frame |
 | **Output** | HQ **Stata** export (`.dta`, `.a` for unanswered) or **Tabular** export (`.tab` + `.do`, `-999999999` / `##N/A##`), with SuSo naming, ordering, labels and missing-value codes; `paradata.tab`; `interview__actions`, `__diagnostics`, `__errors`, `__comments`, `assignment__actions`; the assignments (preload) file; coverage reports; a JSON record of all settings |
@@ -93,7 +93,7 @@ install.packages(".", repos = NULL, type = "source")
 ### Option C — install from a source tarball
 
 ```r
-install.packages("SuSoSimulate_0.5.1.tar.gz", repos = NULL, type = "source")
+install.packages("SuSoSimulate_0.6.0.tar.gz", repos = NULL, type = "source")
 ```
 
 ### Check the installation
@@ -128,7 +128,7 @@ Or from the command line, inside the clone:
 Rscript -e 'testthat::test_local()'
 ```
 
-Expected result: `[ FAIL 0 | WARN 0 | SKIP 1 | PASS 287 ]` (the skipped test runs only in a non-UTF-8 locale). The suite has ten files:
+Expected result: `[ FAIL 0 | WARN 0 | SKIP 1 | PASS 306 ]` (the skipped test runs only in a non-UTF-8 locale). The suite has eleven files:
 
 | File | What it checks |
 |---|---|
@@ -140,6 +140,7 @@ Expected result: `[ FAIL 0 | WARN 0 | SKIP 1 | PASS 287 ]` (the skipped test run
 | `test-export-layout.R` | Export folder `<Q>_<version>_SuSoMock_STATA` (`_2` when it exists), versioned zip names and zip-root contents, `export__info.json`, re-reading the exported STATA zip (version detection), paradata event order and roles (`suso_read_paradata()`) |
 | `test-formats-consistency.R` | Tabular export (`.tab`/`.do`, BOM/CRLF, `-999999999` vs Stata `.a`), `suso_validate_mock()` on both assignment modes and on a corrupted result, interviewer question and cover-first order, GeoJSON boundary, geography (area) measures, `new decimal?[]{...}` and `Quest.IRnd()` |
 | `test-localization.R` | A French/Spanish fixture (`fixtures/localized`: accents, `« »`, `¿ ¡`, `ñ ß ø Ł`, CJK, reusable categories in TSV) exported to Stata and Tabular into an accented folder; Latin-1 frame, category file and generator output; failing generators; `options(OutDec = ",")`; accented upload names in the app. Passes in UTF-8 and C locales |
+| `test-lookup.R` | Lookup tables (`table[rowcode].col`, `ContainsKey`, LINQ over a table) and their re-export in `content.zip`; HQ 26.x `$type` dictionaries; comma-list macros; multi-select combo boxes; id domains from option filters; constant switches flagged unreachable; 26.07 label conventions |
 | `test-pdf.R` | PDF reader on a synthetic printout (integer types, wrapped options, conditions and validations); `ConsistsOf`; code-like text answers |
 | `helper-integrity.R` | Shared checker: unique keys, every roster row has a parent row, no orphan interviews, sequential paradata order, parseable timestamps |
 
@@ -156,7 +157,7 @@ The edge-case fixture covers:
 
 ```bash
 R CMD build .
-R CMD check --no-manual SuSoSimulate_0.5.1.tar.gz
+R CMD check --no-manual SuSoSimulate_0.6.0.tar.gz
 ```
 
 Expected: `Status: OK`.
@@ -296,7 +297,7 @@ Survey area: `suso_design(boundary = "area.geojson")` (a file or GeoJSON string 
 | Input | How it is read | Notes |
 |---|---|---|
 | `document.json` | Directly | Designer → *Download* → JSON, or from any archive below |
-| HQ export `.zip` | Searches for `document.json`; unpacks `Questionnaire/content.zip` if needed | Reusable categories are read from `Categories/*.xlsx` |
+| HQ export `.zip` | Searches for `document.json`; unpacks `Questionnaire/content.zip` if needed | Reusable categories are read from `Categories/*.xlsx`, lookup tables from `Lookup Tables/*.txt` |
 | Designer package `.zip` | Same | |
 | Folder (e.g. `Questionnaire/content/` of an earlier export) | Searches recursively | `document.json` + `Categories/`: the exact questionnaire. In the app, upload `content.zip` or the whole export zip, or select `document.json` together with the category files |
 | Questionnaire `.pdf` | `pdftools` (default) or the `markitdown` CLI (`pdf_engine = "markitdown"`) | **Experimental.** PDF text interleaves table columns, so parsing is heuristic. On a 312-question test questionnaire it recovered 270 questions, all with the correct type, plus 171/174 conditions and 22/24 rosters. Validations wrapped over lines and reusable categories can be lost. Prefer JSON or `content.zip`. |
@@ -458,7 +459,7 @@ questionnaire ──► parser ──► level map + compiled expressions
    - It generates candidates that strongly target the variables in the uncovered conditions.
    - A candidate that hits a missing outcome replaces an interview whose outcomes are all covered elsewhere, so the sample size and PSU structure are kept.
    - With `allow_augment = TRUE`, candidates are appended instead.
-   - Outcomes that validation bounds rule out are labelled `unreachable` in the report. For example, `Q14a > 0` can never be FALSE if Q14a must lie in [1, 20].
+   - Outcomes that cannot occur are labelled `unreachable` in the report and skipped by the repair: validation bounds (`Q14a > 0` can never be FALSE if Q14a must lie in [1, 20]), calculated variables set to a constant that switch a module off (`nonhap_trigger = 0`), and everything inside such a module or depending on a question that is never enabled.
 6. **Export.** The builder writes tables following the SuSo conventions below. It derives paradata and system files from one event stream, so timestamps, durations, statuses, error counts and comments agree everywhere.
 
 ### Reading the coverage report
@@ -472,7 +473,7 @@ res$coverage$branches   # item, kind, level, condition, n_true, n_false, status,
 | `status` | Meaning |
 |---|---|
 | `covered` | Both TRUE and FALSE occurred in at least one interview |
-| `TRUE only` / `FALSE only` | One outcome never occurred. Check `note`: `unreachable: …` means the questionnaire's own validations make it impossible. Otherwise raise `repair_budget`, `repair_time` or the sample size |
+| `TRUE only` / `FALSE only` | One outcome never occurred. Check `note`: `unreachable: …` means the questionnaire itself makes it impossible (validation bounds, a constant switch, a question never enabled). Otherwise raise `repair_budget`, `repair_time` or the sample size |
 | `never evaluated` | The item is never reached, for example because its parent is always disabled |
 
 The `issue` column lists expressions the translator could not run, and C# runtime exceptions (for example `.Value` on null).
@@ -490,6 +491,7 @@ The `issue` column lists expressions the translator could not run, and C# runtim
 | SuSo methods | `InRange`, `InList`, `Contains`, `ContainsAny`, `ContainsAll`, `ContainsOnly`, `IsAnswered`, `CountValue`, `.Yes`, `.No`, `.Missing`, `.Length`, `FullYearsBetween`, `FullMonthsBetween`, `CenturyMonthCode`, `IsValidEmail`, `GpsDistance`, `GpsDistanceKm`, `InRectangle`, `.Latitude/.Longitude/.Accuracy/.Altitude/.Timestamp` |
 | LINQ | `Count`, `Any`, `All`, `Where`, `Select`, `SelectMany`, `Sum`, `Max`, `Min`, `Average`, `First(OrDefault)`, `Last(OrDefault)`, `ElementAt`, `Distinct`, `OrderBy(Descending)`, `Take`, `Skip`, `Concat`, `Union`, `Intersect`, `Except`, `ToList`, `ToArray` |
 | Rosters | `roster.Count(x => x.age > 15)`, `x.@rowcode`, nested `a.plotroster`, deeper-level questions as collections, text-list tuples `Item1/Item2`, linked arrays `q[0]` |
+| Lookup tables | `table[rowcode].column` (e.g. `RandomTable[(int)Math.Floor(Quest.IRnd()*3000.0)+@rowindex].rnd`), `table.ContainsKey(k)`, `table.Count`, `table.Keys`, LINQ over the rows (`table.Where(x => x.col > 0)`, `x.Key`, `x.Value.col`); a missing key raises the C# `KeyNotFoundException` |
 | Strings and dates | `Length`, `ToLower/ToUpper`, `Trim`, `StartsWith/EndsWith`, `Substring`, `IndexOf`, `Replace`, `Split`, `ToString`, `string.IsNullOrEmpty`, `string.Concat/Join`, `Year/Month/Day/Hour/DayOfWeek`, `AddDays/AddMonths/AddYears`, `DateTime.Now/Today`, TimeSpan `TotalDays` and related members |
 | Math and conversion | `Math.Abs/Max/Min/Round/Floor/Ceiling/Pow/Sqrt/Log/Exp/Truncate`, `Convert.ToInt32/ToDouble/ToString`, `int.Parse`, `double.Parse` |
 
@@ -515,7 +517,8 @@ These reproduce a Survey Solutions 24.x Stata and Tabular export.
 | Single-select | Numeric, value-labelled. Linked: the row code, unlabelled |
 | Multi-select | `var__<code>` (negative codes `var__n98`), 1/0. Ordered: the selection rank. Yes/no: 1 yes, 0 no |
 | Linked multi-select | `var__0…var__{n-1}` with row codes, unlabelled. Width is the linked roster's maximum size |
-| Text list | `var__k` (text) and `var__kc` (code) pairs, padded to MaxAnswerCount with `##N/A##` / `.` |
+| Multi-select combo box | `var__0…var__{n-1}` holding the selected codes in order, value-labelled; `n` = MaxAllowedAnswers, else the number of options up to 200 |
+| Text list | `var__k` (text) and `var__kc` (code) pairs, padded to MaxAnswerCount with `##N/A##` / `.`, labelled `label:k` / `label:kc` |
 | GPS | `var__Latitude`, `var__Longitude`, `var__Accuracy`, `var__Altitude` (numeric) and `var__Timestamp` (string) |
 | Date / timestamp | ISO strings `2024-02-23` / `2024-02-23T11:58:16` |
 | Calculated variables | Exported unless `DoNotExport`. Booleans become 1/0 |
@@ -524,7 +527,7 @@ These reproduce a Survey Solutions 24.x Stata and Tabular export.
 | GPS timestamps | `var__Timestamp` in UTC; timestamp questions in device time |
 | Assignments file | `assignments.tab`: the identifying (cover) variables, `_responsible` and `_quantity`, uploadable to HQ as is |
 | Tabular `.do` files | `clear` + `insheet`, then value/variable labels: full question text (no 80-character cut), apostrophes dropped, multi-select and list columns labelled `text:option`; reusable categories defined once under their category name |
-| Variable labels | VariableLabel if set, otherwise question text. HTML tags removed, whitespace kept, cut at 80 characters. Multi-select columns use `VariableLabel:Option` when a VariableLabel exists |
+| Variable labels | VariableLabel if set, otherwise question text. HTML tags removed, whitespace kept, `& < >` written `&amp; &lt; &gt;`, cut at 80 characters. Multi-select columns are labelled `label:Option`, text-list and combo-box columns `label:k` |
 | Value labels | Options of single-selects and numeric special values (e.g. `-98 "Don't know"`); `interview__status` (13 codes) |
 | Interview keys | `interview__key` `NN-NN-NN-NN`, `interview__id` 32-character hex |
 
@@ -557,7 +560,7 @@ Timestamps are UTC with milliseconds; `tz_offset` uses .NET format (`03:00:00`).
 - `interview__diagnostics` — includes `interview__duration` in `DD.HH:MM:SS` (active time, excluding pauses) and `n_questions_unanswered`.
 - `interview__errors` — roster, one `idN` per roster nesting level, variable, `type`, `message__number`, message (errors only; warnings are not listed).
 - `interview__comments`.
-- `assignment__actions` — action codes 0–9.
+- `assignment__actions` — action codes 0–13 (10–13, `TargetAreaChanged`, `Completed`, `Closed`, `Reopened`, as in HQ 26.x).
 
 ---
 
@@ -633,8 +636,9 @@ Benchmark (30 interviews, `repair_time = 60`, one CPU core):
 | demo | 34 / 5 | 0.06 s/interview | 0.04 s/interview | 100% | 32/32 |
 | Plot survey, Tabular reference export | 264 / 6 | 0.46 s/interview | 2.0 s/interview | 96.3% | 44/44 |
 | Agricultural survey, Stata reference export | 312 / 19 | 1.7 s/interview | 3.9 s/interview | 97.5% | 73/73 |
+| Household survey with lookup tables, Stata 26.07 reference export | 614 / 14 | 0.6 s/interview | 2.0 s/interview | 84.6% of reachable conditions (367 of 471 switched off by constants) | 86/86 |
 
-Against the **Tabular** reference export (264 questions, 6 roster levels, a geography question), the mock export with `cover_first = FALSE` has the same 24 `.tab`/`.do` files, identical `.tab` headers, and line-by-line identical `.do` files.
+Against the **Tabular** reference export (264 questions, 6 roster levels, a geography question), the mock export with `cover_first = FALSE` has the same 24 `.tab`/`.do` files, identical `.tab` headers, and line-by-line identical `.do` files (except the assignment action labels 10–13, which HQ added after 24.06).
 
 The export layer was calibrated against a real SuSo **24.06.5** Stata export of a 312-question agricultural survey with 19 roster levels, three nesting levels, list-, multi- and fixed-triggered rosters, linked questions and reusable categories.
 
@@ -644,15 +648,24 @@ The mock data generated from that questionnaire's `document.json` matches the re
 - column names and column order,
 - storage types,
 - variable labels,
-- value labels.
+- value labels (the assignment action labels add the HQ 26.x codes 10–13).
 
 The test also translated every one of the questionnaire's 237 enabling conditions without error, as well as its validations and calculated variables. With 60 interviews, 211 of 223 conditions were observed both TRUE and FALSE; most of the remainder were flagged as unreachable under the questionnaire's own validations.
+
+A **26.07** Stata export of a 614-question household survey (14 roster levels, four lookup tables, multi-select combo boxes over a preloaded list of 1,984 household members, 2,710-option cascading lists, two translations) gave the rules added in 0.6.0: lookup tables, combo-box columns, `label:k` labels for lists, HTML-escaped labels, assignment action codes 10–13. The mock export matches it on all 20 files: file set, column names and order, storage types, variable labels and value labels (except the stray labels noted under Limitations).
+
+Three patterns of that questionnaire shape the generator:
+
+- **Constant switches.** `nonhap_trigger = 0` turns whole modules off; the coverage report marks them unreachable instead of trying to cover them.
+- **Ids that select a slice of a list.** `household_id` picks its members out of a preloaded name list through an option filter (`@optioncode` between `household_id*100+1` and `household_id*100+hhsize`). Such ids are drawn from the list's parent codes, so the filtered questions always have options.
+- **Gatekeepers.** A single-select whose answer opens most of the questionnaire (household found, consent) takes the opening answer 85% of the time, so most mock interviews are complete, as in real fieldwork; the other answers still occur.
 
 ---
 
 ## Limitations
 
-- **Lookup tables.** `table[row].col` and `LinkedFilterExpression` with `@current` are not translated. They fall back to a random draw and are flagged in `$coverage$branches$issue`.
+- **`@current` in linked filters** is not translated. It falls back to a random draw and is flagged in `$coverage$branches$issue`.
+- **Cosmetic HQ quirks** are not reproduced, e.g. the stray value labels HQ 26.07 attaches to some yes/no roster ids with reusable categories.
 - **Unverified format.** Questions linked to a *nested* roster (answer = a row address such as `1,2`) have not been checked against a real export. Please open an issue with an example if they differ.
 - **The app runs one job at a time.** While data are being generated, the app cannot react to other inputs; changes made meanwhile are applied once the run ends, and tab 4 then shows that the results are out of date.
 - **Speed.** About 0.1 s per interview on simple questionnaires and about 1.5 s on heavy ones: 57-row fixed rosters with nested LINQ conditions are evaluated many times per pass. Coverage repair adds candidate interviews, capped by `repair_budget` and `repair_time`.
@@ -716,7 +729,7 @@ Please open an issue on the [GitHub repository](https://github.com/emawbgit/SuSo
 
 If you use SuSoSimulate in your research, please cite:
 
-Clemente, E. "SuSoSimulate: Mock data and paradata generator for Survey Solutions questionnaires." https://github.com/emawbgit/SuSoSimulate, version 0.5.1.
+Clemente, E. "SuSoSimulate: Mock data and paradata generator for Survey Solutions questionnaires." https://github.com/emawbgit/SuSoSimulate, version 0.6.0.
 
 In R: `citation("SuSoSimulate")`.
 

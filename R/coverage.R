@@ -129,7 +129,7 @@ coverage_report <- function(qn, cov, n) {
       condition = gsub("\\s+", " ", nd$cond_src),
       n_true = t, n_false = f,
       status = if (t > 0 && f > 0) "covered" else if (t > 0) "TRUE only" else if (f > 0) "FALSE only" else "never evaluated",
-      note = if (t > 0 && f > 0) "" else unreachable_hint(qn, nd, need = if (t > 0) FALSE else if (f > 0) TRUE else NA),
+      note = if (t > 0 && f > 0) "" else if (t + f == 0) off_ancestor(qn, nd) else unreachable_hint(qn, nd, need = t == 0),
       issue = if (nd$id %in% names(iss_by_id)) iss_by_id[[nd$id]] else "",
       stringsAsFactors = FALSE)
   })
@@ -149,15 +149,37 @@ coverage_report <- function(qn, cov, n) {
                    option_coverage = if (nrow(op)) sum(op$n_used) / sum(op$n_options) else 1))
 }
 
+# Never evaluated because an enclosing group or roster can never be enabled
+off_ancestor <- function(qn, nd, depth = 0L) {
+  p <- nd$parent %||% ""
+  while (nzchar(p) && !is.null(a <- qn$nodes[[p]])) {
+    h <- unreachable_hint(qn, a, need = TRUE, depth)
+    nm <- if (nzchar(a$varname %||% "")) a$varname else strip_html(a$text %||% "")
+    if (nzchar(h)) return(sprintf("unreachable: inside %s (%s)", nm, sub("^unreachable: ", "", h)))
+    p <- a$parent %||% ""
+  }
+  ""
+}
+
 # Heuristic: for `var <op> const` conditions, can the missing outcome occur
 # for any value permitted by var's hard validation bounds?
-unreachable_hint <- function(qn, nd, need) {
+unreachable_hint <- function(qn, nd, need, depth = 0L) {
+  if (depth > 4L) return("")
   a <- nd$enc$ast
   if (is.na(need) || is.null(a) || a$k != "bin" || !(a$op %in% c("==", "!=", "<", ">", "<=", ">="))) return("")
   if (a$l$k != "id" || a$r$k != "num" && !(a$r$k == "un" && a$r$x$k == "num")) return("")
   v <- env_get(qn$by_name, a$l$name)
-  if (is.null(v) || v$kind != "question" || all(is.na(v$bounds))) return("")
   k <- if (a$r$k == "num") a$r$v else -a$r$x$v
+  # calculated variable set to a constant (switches a module off, e.g. nonhap_trigger = 0)
+  if (!is.null(v) && v$kind == "variable" && grepl("^\\s*-?[0-9.]+\\s*$", v$expression %||% "")) {
+    cv <- as.numeric(v$expression)
+    return(if (rt_bin(a$op, cv, k) != need) sprintf("unreachable: %s is the constant %s", v$varname, fmt_num(cv)) else "")
+  }
+  # `x == c` cannot be TRUE when x itself is never enabled
+  if (!is.null(v) && v$kind == "question" && need && a$op == "==" &&
+      (nzchar(unreachable_hint(qn, v, need = TRUE, depth + 1L)) || nzchar(off_ancestor(qn, v, depth + 1L))))
+    return(sprintf("unreachable: %s is never enabled", v$varname))
+  if (is.null(v) || v$kind != "question" || all(is.na(v$bounds))) return("")
   lo <- v$bounds[1]; hi <- v$bounds[2]
   cand <- c(lo, hi, k - 1, k, k + 1)
   cand <- cand[!is.na(cand) & (is.na(lo) | cand >= lo) & (is.na(hi) | cand <= hi)]

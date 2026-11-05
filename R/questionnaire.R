@@ -84,9 +84,34 @@ find_document_json <- function(dir) {
 
 parse_macros <- function(m) {
   if (!length(m)) return(character())
-  items <- if (!is.null(names(m)) && all(nzchar(names(m)))) unname(m) else m
+  items <- Filter(is.list, if (!is.null(names(m)) && all(nzchar(names(m)))) unname(m) else m)   # HQ 26.x adds a "$type" entry
   nm <- vapply(items, function(x) x$Name %||% "", ""); ct <- vapply(items, function(x) x$Content %||% "", "")
   stats::setNames(ct[nzchar(nm)], nm[nzchar(nm)])
+}
+
+# Lookup tables: "Lookup Tables/<id>.txt" (tab-separated, first column rowcode),
+# used in expressions as table[rowcode].column
+load_lookup_tables <- function(lt, dir, warn) {
+  out <- list(); raw <- list()
+  lt <- Filter(is.list, lt %||% list())
+  if (!length(lt)) return(out)
+  ids <- names(lt) %||% vapply(lt, function(x) x$Id %||% "", "")
+  files <- if (is.null(dir)) character() else list.files(dir, recursive = TRUE, full.names = TRUE)
+  for (k in seq_along(lt)) {
+    nm <- lt[[k]]$TableName %||% ""; idn <- tolower(gsub("-", "", ids[k]))
+    hit <- files[tolower(tools::file_path_sans_ext(basename(files))) == idn |
+                 basename(files) == (lt[[k]]$FileName %||% "\\0")]
+    df <- if (length(hit)) tryCatch(utils::read.delim(text = read_text_utf8(hit[1]), stringsAsFactors = FALSE,
+                                                       check.names = FALSE), error = function(e) NULL)
+    if (is.null(df) || !nrow(df) || tolower(names(df)[1]) != "rowcode") {
+      warn("Lookup table '", nm, "' not found: expressions using it fall back to random draws"); next
+    }
+    names(df)[1] <- "rowcode"
+    out[[nm]] <- df
+    raw[[basename(hit[1])]] <- readBin(hit[1], "raw", file.size(hit[1]))   # re-exported in Questionnaire/content.zip
+  }
+  attr(out, "raw") <- raw
+  out
 }
 
 # Reusable categories: Categories/<id>.xlsx|.tsv|.txt|.csv inside the package
@@ -166,6 +191,8 @@ qn_from_document <- function(doc, cat_dir = NULL, verbose = TRUE, raw_json = NUL
   qn$levels  <- list("main" = list(key = "", file = qn$varname, id_col = NULL, depth = 0L, parent = NA))
   qn$warnings <- character()
   warn <- function(...) qn$warnings <- c(qn$warnings, paste0(...))
+  qn$lookup <- load_lookup_tables(doc$LookupTables, cat_dir, warn)
+  qn$lookup_raw <- attr(qn$lookup, "raw") %||% list()
 
   walk <- function(items, parent, path) {
     ids <- character()
@@ -247,6 +274,7 @@ qn_from_document <- function(doc, cat_dir = NULL, verbose = TRUE, raw_json = NUL
         node$filter <- it$Properties$OptionsFilterExpression %||% it$OptionsFilterExpression %||% ""
         node$max_answers <- as_num_or_na(it$MaxAllowedAnswers %||% it$MaxAnswerCount)
         node$yesno <- isTRUE(it$YesNoView)
+        node$combo <- isTRUE(it$IsFilteredCombobox)
         node$ordered <- isTRUE(it$AreAnswersOrdered)
         node$is_timestamp <- isTRUE(it$IsTimestamp)
         node$mask <- it$Mask %||% ""
@@ -368,6 +396,53 @@ compile_all <- function(qn) {
     if (nd$kind == "variable") nd$exprc <- comp(nd$expression, own, "expression")
     qn$nodes[[id]] <- nd
     if (nzchar(nd$varname %||% "")) qn$by_name[[nd$varname]] <- nd
+  }
+  # A numeric question that an option filter uses to pick a slice of a coded list (e.g.
+  # household_id selecting its members from a preloaded name list, @optioncode between
+  # household_id*100+1 and household_id*100+hhsize) is drawn from that list's parent codes,
+  # so the filter keeps some options.
+  # ponytail: assumes parent codes carry the id; a filter evaluator per candidate if lists vary
+  for (id in qn$order) {
+    nd <- qn$nodes[[id]]
+    if (nd$kind != "question" || is.null(nd$filterc) || !NROW(nd$options)) next
+    par <- unique(stats::na.omit(nd$options$parent))
+    if (!length(par)) next
+    for (v in nd$filterc$refs) {
+      x <- env_get(qn$by_name, v)
+      if (is.null(x) || x$kind != "question" || !identical(x$qtype, "numeric") || isTRUE(x$is_trigger)) next
+      x$domain <- par; qn$nodes[[x$id]] <- x; qn$by_name[[v]] <- x
+    }
+  }
+  # Gatekeepers: a single-select whose `var == code` opens much of the questionnaire
+  # (household found, consent) takes that code most of the time, as in real fieldwork.
+  # Weight of an item = 1 + items inside it + what the item itself opens.
+  size <- list(); par_of <- function(nd) nd$parent %||% ""
+  for (id in qn$order) {
+    p <- par_of(qn$nodes[[id]])
+    while (nzchar(p) && !is.null(qn$nodes[[p]])) { size[[p]] <- (size[[p]] %||% 0) + 1; p <- par_of(qn$nodes[[p]]) }
+  }
+  eqs <- function(a) {                                   # var == const pairs in an AST
+    if (!is.list(a) || is.null(a$k)) return(NULL)
+    if (a$k == "bin" && a$op == "==" && a$l$k == "id" && a$r$k == "num") return(list(c(a$l$name, a$r$v)))
+    unlist(lapply(a[c("l", "r", "x", "cond", "yes", "no")], eqs), recursive = FALSE)
+  }
+  opens <- list(); gate <- list()
+  for (pass in 1:3) {
+    for (id in rev(qn$order)) {
+      nd <- qn$nodes[[id]]
+      w <- 1 + (size[[id]] %||% 0) + (if (nzchar(nd$varname %||% "")) opens[[nd$varname]] %||% 0 else 0)
+      for (e in eqs(nd$enc$ast)) {
+        g <- gate[[e[1]]] %||% list(); g[[e[2]]] <- max(g[[e[2]]] %||% 0, w); gate[[e[1]]] <- g
+      }
+    }
+    for (v in names(gate)) opens[[v]] <- max(unlist(gate[[v]]))
+  }
+  for (v in names(gate)) {
+    nd <- env_get(qn$by_name, v); g <- unlist(gate[[v]])
+    g2 <- sort(g, decreasing = TRUE)[2]                  # clear winner only: chained alternatives stay uniform
+    if (is.null(nd) || nd$kind != "question" || !identical(nd$qtype, "single") || !is.null(nd$lnk) ||
+        max(g) < 10 || (!is.na(g2) && max(g) < 1.5 * g2)) next
+    nd$gate <- as.numeric(names(g)[which.max(g)]); qn$nodes[[nd$id]] <- nd; qn$by_name[[v]] <- nd
   }
   for (v in names(targets)) {
     nd <- env_get(qn$by_name, v)

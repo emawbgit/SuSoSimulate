@@ -419,7 +419,13 @@ expand_macros <- function(src, macros) {
     nm <- substring(src, m + 1, m + attr(m, "match.length") - 1)
     hit <- nm[nm %in% names(macros)]
     if (!length(hit)) break
-    for (h in unique(hit)) src <- gsub(paste0("\\$", h, "\\b"), paste0("(", macros[[h]], ")"), src, perl = TRUE)
+    for (h in unique(hit)) {
+      ct <- macros[[h]]
+      # a comma list ($codes = "1,2,6") is pasted as is (SuSo substitutes text); anything else in parentheses
+      flat <- ct; while (grepl("\\([^()]*\\)", flat)) flat <- gsub("\\([^()]*\\)", "", flat)
+      if (!grepl(",", flat, fixed = TRUE)) ct <- paste0("(", ct, ")")
+      src <- gsub(paste0("\\$", h, "\\b"), gsub("\\", "\\\\", ct, fixed = TRUE), src, perl = TRUE)
+    }
   }
   src
 }

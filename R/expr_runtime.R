@@ -79,7 +79,10 @@ rt_special <- function(name) {
 ctx_lookup <- function(ctx, name) {
   qn <- ctx$qn
   node <- env_get(qn$by_name, name)
-  if (is.null(node)) unsupported(paste0("Unknown identifier '", name, "' (lookup table or unsupported reference)"))
+  if (is.null(node)) {
+    if (!is.null(qn$lookup[[name]])) return(structure(list(name = name, df = qn$lookup[[name]]), class = "sus_lookup"))
+    unsupported(paste0("Unknown identifier '", name, "' (not a variable or lookup table of the questionnaire)"))
+  }
   if (node$kind == "roster") return(roster_rows(ctx, node))
   vp <- node$path; cp <- ctx$path; d <- length(vp)
   if (d <= length(cp) && identical(vp, cp[seq_len(d)])) {
@@ -167,8 +170,9 @@ as_seq <- function(x) {
   }
   if (inherits(x, "sus_yesno")) return(as.list(x$yes))
   if (inherits(x, "sus_multi")) return(as.list(as.numeric(unclass(x))))
+  if (inherits(x, "sus_lookup")) return(lapply(x$df$rowcode, function(i) lookup_row(x, i)))
   if (is.null(x)) return(list())
-  if (is.list(x) && !inherits(x, c("sus_row", "sus_gps", "sus_tuple"))) return(x)
+  if (is.list(x) && !inherits(x, c("sus_row", "sus_gps", "sus_tuple", "sus_lrow"))) return(x)
   if (is.atomic(x)) { if (length(x) == 1 && is.na(x)) return(list()); return(as.list(x)) }
   list(x)
 }
@@ -233,8 +237,16 @@ rt_new <- function(type, ...) {
   unsupported(paste("new", type))
 }
 
+# Lookup tables behave as Dictionary<int, row>: table[rowcode].column
+lookup_row <- function(tb, i) {
+  j <- match(i, tb$df$rowcode)
+  if (is.na(j)) stop(sprintf("The given key '%s' was not present in the dictionary (%s)", fmt_num(i), tb$name))
+  structure(c(list(Key = tb$df$rowcode[j]), as.list(tb$df[j, -1, drop = FALSE])), class = "sus_lrow")
+}
+
 rt_index <- function(obj, i) {
   if (is_na1(i)) stop("Index is null")
+  if (inherits(obj, "sus_lookup")) return(lookup_row(obj, i))
   if (is.character(obj) && length(obj) == 1 && !inherits(obj, "sus_textlist")) return(substr(obj, i + 1, i + 1))
   s <- as_seq(obj)
   if (i + 1 > length(s) || i < 0) stop("Index was outside the bounds of the array")
@@ -284,6 +296,13 @@ rt_member <- function(obj, name) {
                   Missing = sus_multi(setdiff(obj$all, c(obj$yes, obj$no))), Length = length(obj$yes), unsupported(paste0(".", name, " on yes/no"))))
   }
   if (inherits(obj, "sus_tuple")) return(obj[[name]] %||% unsupported(paste0(".", name, " on list item")))
+  if (inherits(obj, "sus_lrow")) {
+    if (name == "Value") return(obj)                                  # KeyValuePair in LINQ over a table
+    if (!name %in% names(obj)) stop(sprintf("Lookup table has no column '%s'", name))
+    return(obj[[name]])
+  }
+  if (inherits(obj, "sus_lookup")) return(switch(name, Count = nrow(obj$df), Keys = obj$df$rowcode,
+                                                 Values = as_seq(obj), unsupported(paste0(".", name, " on lookup table"))))
   # Area is null unless a polygon, Length null unless a polygon or polyline (as in Designer syntax)
   if (inherits(obj, "sus_area")) return(switch(name, Area = if ((obj$geom %||% 0L) == 0L) obj$area else NA,
                                                Length = if ((obj$geom %||% 0L) %in% 0:1) obj$len else NA,
@@ -324,6 +343,7 @@ rt_method <- function(obj, name, ...) {
   a <- list(...)
   f <- if (length(a) && is.function(a[[1]])) a[[1]] else NULL
   pred <- function(s) vapply(s, function(e) rt_truthy(f(e)), TRUE)
+  if (inherits(obj, "sus_lookup") && name == "ContainsKey") return(isTRUE(a[[1]] %in% obj$df$rowcode))
   switch(name,
     InRange = { if (is_na1(obj)) FALSE else rt_bin(">=", obj, a[[1]]) && rt_bin("<=", obj, a[[2]]) },
     InList = { if (is_na1(obj)) FALSE else any(vapply(unlist(a), function(v) rt_bin("==", obj, v), TRUE)) },
