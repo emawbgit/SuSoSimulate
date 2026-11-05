@@ -668,7 +668,6 @@ Three patterns of that questionnaire shape the generator:
 - **Cosmetic HQ quirks** are not reproduced, e.g. the stray value labels HQ 26.07 attaches to some yes/no roster ids with reusable categories.
 - **Unverified format.** Questions linked to a *nested* roster (answer = a row address such as `1,2`) have not been checked against a real export. Please open an issue with an example if they differ.
 - **The app runs one job at a time.** While data are being generated, the app cannot react to other inputs; changes made meanwhile are applied once the run ends, and tab 4 then shows that the results are out of date.
-- **Speed.** About 0.1 s per interview on simple questionnaires and about 1.5 s on heavy ones: 57-row fixed rosters with nested LINQ conditions are evaluated many times per pass. Coverage repair adds candidate interviews, capped by `repair_budget` and `repair_time`.
 - **PDF input** is heuristic. Always prefer `document.json`.
 
 ---
