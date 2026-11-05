@@ -621,13 +621,13 @@ The conventions were reviewed against the official documentation ([docs.mysurvey
 | Missing values | Skipped: system missing / blank; enabled but unanswered: `-999,999,999` and `##N/A##`; Stata uses `.a` | Same |
 | Export formats | Tab: `.tab` + a `.do` per file; Stata: `.dta` version 14, Unicode | Same |
 | Variable names | English letters, digits, underscore; the questionnaire variable names the main file | Same (file names are kept ASCII) |
-| System files | `assignment__actions`, `interview__actions`, `__comments`, `__diagnostics`, `__errors`, codes for roles, actions, statuses | Same, labelled as in HQ 24.06 |
+| System files | `assignment__actions`, `interview__actions`, `__comments`, `__diagnostics`, `__errors`, codes for roles, actions, statuses | Same, labelled as in HQ 24.06 and 26.07 (assignment actions 10–13) |
 | Paradata | `paradata.tab`, `paradata.do`, `export__readme.txt`, `export__info.json`; columns and event names; roster address `2,5,0` | Same; parameter details follow the real 24.06 export where the documentation is older (e.g. `VariableDisabled var\|\|rv`). Checked again against a 26.07 paradata export: `InterviewCreated` carries the assignment id; geography and linked-question values match |
 | DateTime values | Paradata: `M/D/YYYY h:m:s AM/PM` for DateTime variables, `YYYY-MM-DD hh:mm:ss` for timestamp answers; GPS timestamps in UTC | Same |
 | Geography | Geometry string, WKT (default) or GeoJSON; `__area`, `__len`, `__num` | Same, selectable with `geo_format` |
 | Assignments upload | Tab file with the identifying variables, `_responsible`, `_quantity` | `assignments.tab` |
 
-Where the documentation and the real 24.06 exports in hand differ (e.g. the comment date format, newer assignment action codes 10–13, GPS provider fields added in 26.09), SuSoSimulate follows the real exports.
+Where the documentation and the real 24.06 exports in hand differ (e.g. the comment date format, GPS provider fields added in 26.09), SuSoSimulate follows the real exports.
 
 Benchmark (30 interviews, `repair_time = 60`, one CPU core):
 
