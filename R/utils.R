@@ -92,6 +92,7 @@ check_dependencies <- function(pdf = FALSE, xlsx = FALSE) {
   if (length(miss)) {
     stop("Missing packages: ", paste(miss, collapse = ", "),
          "\nInstall with: install.packages(c(", paste0('"', miss, '"', collapse = ", "), "))",
+         "\nOn a locked-down machine, run install_SuSoSimulate.R from the repository instead.",
          call. = FALSE)
   }
   invisible(TRUE)

@@ -126,7 +126,10 @@ load_categories <- function(cats, dir) {
     if (!length(hit)) next
     f <- hit[1]; ext <- tolower(tools::file_ext(f))
     df <- tryCatch({
-      sanitize_df(if (ext %in% c("xlsx", "xls")) { check_dependencies(xlsx = TRUE); as.data.frame(readxl::read_excel(f, trim_ws = FALSE)) }
+      sanitize_df(if (ext %in% c("xlsx", "xls")) {
+        if (requireNamespace("readxl", quietly = TRUE)) as.data.frame(readxl::read_excel(f, trim_ws = FALSE))
+        else if (ext == "xlsx") read_xlsx_min(f)
+        else { check_dependencies(xlsx = TRUE); NULL } }
       else utils::read.delim(text = read_text_utf8(f), sep = if (ext == "csv") "," else "\t", stringsAsFactors = FALSE, encoding = "UTF-8"))
     }, error = function(e) NULL)
     if (is.null(df) || !nrow(df)) next

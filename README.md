@@ -29,13 +29,14 @@ With it you can:
 13. [Working with the output in Stata](#working-with-the-output-in-stata)
 14. [Localised questionnaires and special characters](#localised-questionnaires-and-special-characters)
 15. [Validation against a real export](#validation-against-a-real-export)
-16. [Limitations](#limitations)
-17. [Troubleshooting](#troubleshooting)
-18. [Package structure](#package-structure)
-19. [Reporting bugs](#reporting-bugs)
-20. [Citation](#citation)
-21. [Authors](#authors)
-22. [License](#license)
+16. [Ideas taken from IPA's Synthetic Data Generator](#ideas-taken-from-ipas-synthetic-data-generator)
+17. [Limitations](#limitations)
+18. [Troubleshooting](#troubleshooting)
+19. [Package structure](#package-structure)
+20. [Reporting bugs](#reporting-bugs)
+21. [Citation](#citation)
+22. [Authors](#authors)
+23. [License](#license)
 
 ---
 
@@ -50,9 +51,11 @@ With it you can:
 | **Coverage** | Generators deliberately steer toward branch constants; a repair loop swaps redundant interviews for ones that hit missing branch outcomes; a report flags anything uncovered or provably unreachable |
 | **Sampling** | Strata → PSUs → secondary units, preload of identifying questions, interviewer/supervisor teams (logins taken from the questionnaire's enumerator question), fieldwork calendar, PSU GPS centroids inside a survey boundary drawn on OpenStreetMap or loaded from GeoJSON, or a user-supplied frame |
 | **Output** | HQ **Stata** export (`.dta`, `.a` for unanswered) or **Tabular** export (`.tab` + `.do`, `-999999999` / `##N/A##`), with SuSo naming, ordering, labels and missing-value codes; `paradata.tab`; `interview__actions`, `__diagnostics`, `__errors`, `__comments`, `assignment__actions`; the assignments (preload) file; coverage reports; a JSON record of all settings |
+| **Distributions** | Per-question answer distributions (normal, uniform, exponential, lognormal) truncated to the validation range, and target correlations between numeric questions of the same roster (Gaussian copula); `suso_summary()` reports missingness and the distribution of every exported variable |
 | **Consistency** | `suso_validate_mock()` cross-checks ids, statuses, error and comment counts, assignments, interviewers and paradata across all files |
 | **Languages** | French, Spanish and other localised questionnaires: accents, cedillas, `¿ ¡`, curly quotes and non-Latin scripts pass through unchanged; Latin-1 / Windows-1252 inputs are converted; text answers follow the questionnaire's language; works in UTF-8 and C locales |
-| **Interfaces** | Shiny app (point-and-click, iehfc-style workflow), interactive console wizard, and a scriptable API; progress with estimated time remaining |
+| **Interfaces** | Shiny app (point-and-click, iehfc-style workflow), double-click launchers for Windows and macOS, interactive console wizard, and a scriptable API; progress with estimated time remaining |
+| **Installation** | `install_SuSoSimulate.R`: base R only, personal library, binary packages, proxy fallback, private-repository aware; built for locked-down (e.g. World Bank) machines |
 
 ---
 
@@ -60,22 +63,51 @@ With it you can:
 
 ### Requirements
 
-- **R ≥ 4.1** on Windows, macOS or Linux. The package is pure R, so no compiler or Rtools is needed.
+- **R ≥ 4.1** on Windows, macOS or Linux. The package is pure R, so no compiler or Rtools is needed. Checked on all three systems by GitHub Actions (`.github/workflows/R-CMD-check.yaml`).
 - **Required packages:** `jsonlite`, `haven`, `zip` (installed automatically with the package).
-- **Optional packages:**
-  - `readxl` — reusable categories stored as `.xlsx` (standard in Designer/HQ archives).
-  - `pdftools` — PDF input.
-  - `shiny` (≥ 1.7), `bslib` (≥ 0.6), `DT` — the Shiny app.
+- **Optional packages** (SuSoSimulate runs without them):
+  - `shiny` (≥ 1.7), `bslib` (≥ 0.6), `DT` — the Shiny app. Without them, `suso_mock_interactive()` asks the same questions in the console.
+  - `readxl` — faster reading of reusable categories. Without it, a built-in reader handles the `.xlsx` files of Designer/HQ archives.
+  - `pdftools` — PDF input (experimental).
   - `testthat` — running the test suite.
 
-### Option A — install from GitHub (recommended)
+### Option A — the installer (recommended, also on locked-down machines)
+
+`install_SuSoSimulate.R`, at the root of the repository, needs base R only (no `remotes`, no Rtools, no admin rights). It is written for restrictive IT setups such as World Bank laptops:
+
+| Hurdle | What the installer does |
+|---|---|
+| `404` from `remotes::install_github()` | The repository is **private**: GitHub answers 404 to anyone not signed in, and `remotes` cannot sign in for you. The installer uses your `GITHUB_PAT` when set, or installs from the ZIP you download in the browser (where you are signed in). Once the repository is public, no token is needed |
+| `remotes` itself blocked | Not used |
+| System library not writable (`'lib' is not writable`) | Installs into your personal library (`R_LIBS_USER`), creating it if needed |
+| No Rtools / compilers | Binary packages only on Windows and macOS (`install.packages.compile.from.source = "never"`) |
+| Proxy or SSL inspection breaks downloads (`cannot open URL`) | Retries with the Windows internet settings (`download.file.method = "wininet"`) |
+| Internal package mirror | Keeps the repository already set in `options(repos)` (e.g. a Posit Package Manager mirror); otherwise uses CRAN |
+| One optional package blocked (e.g. `pdftools`) | Installed one by one; a failure is reported and skipped |
 
 ```r
-install.packages(c("remotes", "readxl", "pdftools", "shiny", "bslib", "DT", "testthat"))
-remotes::install_github("emawbgit/SuSoSimulate")
+# 1. In the browser (signed in to GitHub): https://github.com/emawbgit/SuSoSimulate > Code > Download ZIP
+# 2. Unzip it, open R/RStudio in the unzipped folder, then:
+source("install_SuSoSimulate.R")
+install_susosimulate(".")                      # or the path to the .zip / a .tar.gz
+
+# Or straight from GitHub, with a personal access token while the repository is private:
+Sys.setenv(GITHUB_PAT = "ghp_...")             # GitHub > Settings > Developer settings > Tokens (scope: repo)
+source("install_SuSoSimulate.R"); install_susosimulate()
 ```
 
-### Option B — install from a local clone
+From a terminal: `Rscript install_SuSoSimulate.R SuSoSimulate-main.zip`.
+
+**No R console needed:** double-click `launch/SuSoSimulate_app.bat` (Windows) or `launch/SuSoSimulate_app.command` (macOS) in the unzipped folder. It finds R (also per-user installs from Software Center, which are not on the PATH), installs what is missing and opens the app in the browser.
+
+### Option B — `remotes::install_github()`
+
+```r
+install.packages(c("remotes", "readxl", "shiny", "bslib", "DT"))
+remotes::install_github("emawbgit/SuSoSimulate")   # private repository: set GITHUB_PAT first
+```
+
+### Option C — from a local clone
 
 ```bash
 git clone https://github.com/emawbgit/SuSoSimulate.git
@@ -83,17 +115,10 @@ cd SuSoSimulate
 R CMD INSTALL .
 ```
 
-Or, from inside R with the working directory set to the clone:
+### Option D — from a source tarball
 
 ```r
-install.packages(c("jsonlite", "haven", "zip", "readxl", "pdftools", "shiny", "bslib", "DT", "testthat"))
-install.packages(".", repos = NULL, type = "source")
-```
-
-### Option C — install from a source tarball
-
-```r
-install.packages("SuSoSimulate_0.6.0.tar.gz", repos = NULL, type = "source")
+install.packages("SuSoSimulate_0.7.0.tar.gz", repos = NULL, type = "source")
 ```
 
 ### Check the installation
@@ -128,7 +153,7 @@ Or from the command line, inside the clone:
 Rscript -e 'testthat::test_local()'
 ```
 
-Expected result: `[ FAIL 0 | WARN 0 | SKIP 1 | PASS 306 ]` (the skipped test runs only in a non-UTF-8 locale). The suite has eleven files:
+Expected result: `[ FAIL 0 | WARN 0 | SKIP 1 | PASS 346 ]` (the skipped test runs only in a non-UTF-8 locale). The suite has twelve files:
 
 | File | What it checks |
 |---|---|
@@ -141,6 +166,7 @@ Expected result: `[ FAIL 0 | WARN 0 | SKIP 1 | PASS 306 ]` (the skipped test run
 | `test-formats-consistency.R` | Tabular export (`.tab`/`.do`, BOM/CRLF, `-999999999` vs Stata `.a`), `suso_validate_mock()` on both assignment modes and on a corrupted result, interviewer question and cover-first order, GeoJSON boundary, geography (area) measures, `new decimal?[]{...}` and `Quest.IRnd()` |
 | `test-localization.R` | A French/Spanish fixture (`fixtures/localized`: accents, `« »`, `¿ ¡`, `ñ ß ø Ł`, CJK, reusable categories in TSV) exported to Stata and Tabular into an accented folder; Latin-1 frame, category file and generator output; failing generators; `options(OutDec = ",")`; accented upload names in the app. Passes in UTF-8 and C locales |
 | `test-lookup.R` | Lookup tables (`table[rowcode].col`, `ContainsKey`, LINQ over a table) and their re-export in `content.zip`; HQ 26.x `$type` dictionaries; comma-list macros; multi-select combo boxes; id domains from option filters; constant switches flagged unreachable; 26.07 label conventions |
+| `test-distributions.R` | Truncated distributions (monotone quantiles, bounds), copula rank correlation and repair of inconsistent pairs, `numeric_dist`/`correlations` end to end with warnings for unusable variables, the app's text spec, `suso_summary()`, fake addresses, the readxl-free `.xlsx` reader (namespaced XML, shared and inline strings, entities, accents), and the base-R installer into a personal library |
 | `test-pdf.R` | PDF reader on a synthetic printout (integer types, wrapped options, conditions and validations); `ConsistsOf`; code-like text answers |
 | `helper-integrity.R` | Shared checker: unique keys, every roster row has a parent row, no orphan interviews, sequential paradata order, parseable timestamps |
 
@@ -157,7 +183,7 @@ The edge-case fixture covers:
 
 ```bash
 R CMD build .
-R CMD check --no-manual SuSoSimulate_0.6.0.tar.gz
+R CMD check --no-manual SuSoSimulate_0.7.0.tar.gz
 ```
 
 Expected: `Status: OK`.
@@ -243,8 +269,8 @@ The app follows the workflow of DIME's [iehfc](https://github.com/dime-worldbank
 |---|---|
 | **1. Questionnaire** | Upload any HQ export zip or `content.zip` (or `document.json` with its category files), or use the demo. You see the number of questions, roster levels, conditions and untranslatable expressions, the export files the questionnaire will produce, every question with its condition, and parser messages. |
 | **2. Sample design** | PSUs, interviews per PSU (the total updates as you type, and tab 4 flags results generated with older settings), and the identifying questions that receive the stratum, PSU and household ids, pre-guessed from the cover page. The question recording the interviewer is detected. Draw the survey area on the OpenStreetMap (polygon or rectangle) or upload a GeoJSON (e.g. from geojson.io); PSU centroids fall inside it. Also set field teams, the calendar and the UTC offset. Optionally upload a preload frame (CSV). |
-| **3. Settings** | A min–max slider for each numeric or list roster trigger, bounded by its validation. Also item non-response, validation-error injection, special values, branch-steering strength, coverage repair and budget, final status shares, and the seed. |
-| **4. Generate & review** | One click generates the data, with a progress bar. Value boxes show interviews, branch coverage, option coverage and paradata events. Tabs hold the coverage report (uncovered branches first, with unreachable notes), option coverage, a browser for every export file, the paradata, and the system files. |
+| **3. Settings** | A min–max slider for each numeric or list roster trigger, bounded by its validation. Also item non-response, validation-error injection, special values, branch-steering strength, coverage repair and budget, final status shares, and the seed. A text box sets answer distributions and correlations, one line each (`income lognormal meanlog=9 sdlog=1`, `income ~ spend 0.7`). |
+| **4. Generate & review** | One click generates the data, with a progress bar. Value boxes show interviews, branch coverage, option coverage and paradata events. Tabs hold the coverage report (uncovered branches first, with unreachable notes), option coverage, a per-variable summary (disabled / unanswered / answered, mean, sd, range), a browser for every export file, the paradata, and the system files. |
 | **5. Export** | Choose Stata or Tabular, set the questionnaire version (pre-filled from an uploaded HQ export), then download `<Q>_<version>_SuSoMock_STATA.zip` (or `_Tabular.zip`) or save the same folder to a path on your computer: `<Q>_<version>_STATA_All.zip` (or `_Tabular_All.zip`), `<Q>_<version>_Paradata_All.zip`, `assignments.tab`, coverage reports, sample frame and settings, plus `reproduce_mock.R` and `load_mock.do`. You can also save the settings as JSON and load them back later (or share them with the team), and download the template code: an R script that reproduces the run, and a Stata do-file that loads every file and merges each roster onto its parent. |
 
 <p align="center">
@@ -350,6 +376,22 @@ Survey area: `suso_design(boundary = "area.geojson")` (a file or GeoJSON string 
 | `cover_first` | `TRUE` | Identifying (cover) questions and the interviewer question right after the ids in the main file, as on the assignment. `FALSE` keeps HQ's document order (exact HQ column order) |
 | `restart_rate`, `rejection_rate` | 0.15, 0.2 | Share of interviews with a `Restarted` cycle / a supervisor rejection before the final status |
 | `max_passes`, `max_tries`, `max_roster_rows` | 5, 25, 200 | Engine limits |
+| `numeric_dist` | `list()` | Distribution of a numeric question's answers: `"normal"`, `"uniform"`, `"exponential"`, `"lognormal"`, or `list(dist =, <parameters>)` with `mean, sd` / `min, max` / `rate` / `meanlog, sdlog`. Drawn within the validation range; missing parameters come from it. Branch steering then only acts during coverage repair |
+| `correlations` | none | Target correlations between numeric questions of the same roster: `list(c("crop_area", "harvest_kg", 0.7))` or a data frame `var1, var2, rho`. Gaussian copula per roster row; inconsistent sets are made positive definite. Realised correlations are lower when routing or validations cut the range (e.g. a question asked only if the other exceeds a threshold) |
+
+### Example: distributions and correlations
+
+```r
+cfg <- suso_mock_config(
+  numeric_dist = list(age      = list(dist = "normal", mean = 32, sd = 14),
+                      income   = list(dist = "lognormal", meanlog = 11, sdlog = 0.9),
+                      distance = "exponential"),               # parameters from the validation range
+  correlations = list(c("income", "spending", 0.8),             # same roster (household)
+                      c("plot_area", "harvest_kg", 0.6)))       # same roster (plots)
+res <- suso_mock("document.json", config = cfg, seed = 1)
+s <- suso_summary(res)                                          # one row per exported variable
+s[s$variable %in% c("income", "spending"), c("answered", "unanswered", "mean", "sd", "min", "max")]
+```
 
 ### Example: custom preload frame and generators
 
@@ -662,6 +704,22 @@ Three patterns of that questionnaire shape the generator:
 
 ---
 
+## Ideas taken from IPA's Synthetic Data Generator
+
+[PovertyAction/Synthetic-Data-Generator](https://github.com/PovertyAction/Synthetic-Data-Generator) is a Streamlit app that fills a flat table with Faker values: numeric columns with a chosen distribution and a common correlation, categorical columns `A`–`F`, a missing-data share, and CSV / Excel / Stata downloads. It does not read a questionnaire. SuSoSimulate generates from the questionnaire's routing, so each idea was adapted, not copied:
+
+| IPA feature | In SuSoSimulate |
+|---|---|
+| Normal / Uniform / Exponential / Lognormal per numeric column | `numeric_dist`, per question, truncated to the question's validation range (inverse-CDF, no rejection loop) |
+| One correlation for all numeric columns (Cholesky) | `correlations`, per pair, via a Gaussian copula per roster row, so marginals, validations and routing still hold; inconsistent pairs repaired to a valid matrix |
+| Missing-data percentage | Already there as `item_nonresponse` (enabled but unanswered, `.a` / `##N/A##`), kept apart from routing skips |
+| Faker names, emails, phones, addresses | Names, emails, phones already language-aware; addresses added (EN/FR/ES). Credit cards, companies: not survey items, not added |
+| Preview: dtype, missing count, correlation matrix | `suso_summary()` and the app's *Variables* tab (per file: disabled / unanswered / answered, mean, sd, range) |
+| CSV / Excel / Stata download | Stata and Tabular, the Survey Solutions formats; a flat CSV/Excel would break the multi-file layout the mock exists to reproduce |
+| `run.bat` launcher | `launch/SuSoSimulate_app.bat` and `.command`, which also find per-user R installs and install missing packages |
+
+---
+
 ## Limitations
 
 - **`@current` in linked filters** is not translated. It falls back to a random draw and is flagged in `$coverage$branches$issue`.
@@ -676,8 +734,10 @@ Three patterns of that questionnaire shape the generator:
 
 | Symptom | Fix |
 |---|---|
-| `Missing packages: jsonlite, haven` | `install.packages(c("jsonlite", "haven"))` |
-| `Reusable categories … not found: using placeholder codes 1-5` | Use the full Designer or HQ zip, which contains `Categories/*.xlsx`, and install `readxl` |
+| `HTTP error 404` from `remotes::install_github()` | The repository is private. Use the installer with a downloaded ZIP or a `GITHUB_PAT` (see Installation), or make the repository public |
+| `'lib = ...' is not writable`, `cannot open URL`, `installation of package had non-zero exit status`, Rtools requested | Use `install_SuSoSimulate.R`: personal library, binaries only, Windows proxy fallback. If CRAN itself is blocked, ask IT for the internal mirror URL and set `options(repos = c(CRAN = "<url>"))` before running it |
+| `Missing packages: jsonlite, haven` | `install.packages(c("jsonlite", "haven"))`, or run `install_SuSoSimulate.R` |
+| `Reusable categories … not found: using placeholder codes 1-5` | Use the full Designer or HQ zip, which contains `Categories/*.xlsx` (read with or without `readxl`) |
 | Many `TRUE only` / `FALSE only` rows without an `unreachable` note | Increase `ssu_per_psu`, `repair_budget` (e.g. 1000), `repair_time` or `target_prob`; or set `allow_augment = TRUE` |
 | Coverage repair is slow | Lower `repair_time` (e.g. 30) or set `coverage_repair = FALSE`. Each repair candidate is a full interview; on heavy questionnaires that is several seconds |
 | `! N interviews did not reach a stable state` | The questionnaire has circular conditions. Increase `max_passes`, or check the reported items |
@@ -708,6 +768,8 @@ R/
   paradata.R            paradata and system files
   tabular.R             Tabular export (.tab + .do)
   validate.R            suso_validate_mock(): cross-file consistency
+  distributions.R       numeric_dist, correlations (copula), app text spec
+  summary.R             suso_summary(): per-variable missingness and distribution
   geo.R                 survey boundary (GeoJSON) and point sampling
   text.R                UTF-8 repair, accent folding, safe names, language pools
   suso_mock.R           main entry point and writer
@@ -716,6 +778,9 @@ R/
 inst/app/               app.R deployment entry point + www/logo.png, www/leaflet (Leaflet 1.7.1 BSD-2, Leaflet.draw 1.0.4 MIT)
 inst/extdata/demo_household.json   demo questionnaire
 tests/testthat/                    test suite (+ fixtures/edge_cases.json)
+install_SuSoSimulate.R             base-R installer (not part of the built package)
+launch/                            double-click launchers: SuSoSimulate_app.bat (Windows), .command (macOS)
+.github/workflows/                 R CMD check on Windows, macOS, Linux; installer test
 ```
 
 ---
@@ -728,7 +793,7 @@ Please open an issue on the [GitHub repository](https://github.com/emawbgit/SuSo
 
 If you use SuSoSimulate in your research, please cite:
 
-Clemente, E. "SuSoSimulate: Mock data and paradata generator for Survey Solutions questionnaires." https://github.com/emawbgit/SuSoSimulate, version 0.6.0.
+Clemente, E. "SuSoSimulate: Mock data and paradata generator for Survey Solutions questionnaires." https://github.com/emawbgit/SuSoSimulate, version 0.7.0.
 
 In R: `citation("SuSoSimulate")`.
 

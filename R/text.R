@@ -117,3 +117,59 @@ detect_language <- function(texts) {
             last = c("Pe\u00f1a", "N\u00fa\u00f1ez", "Garc\u00eda", "L\u00f3pez", "Hern\u00e1ndez", "Mart\u00ednez", "G\u00f3mez", "P\u00e9rez", "Mu\u00f1oz", "Jim\u00e9nez", "Ord\u00f3\u00f1ez", "V\u00e1zquez"),
             words = c("campo", "mercado", "agua", "escuela", "cosecha", "lluvia", "ganado", "pueblo", "temporada", "precio", "r\u00edo", "cr\u00e9dito", "salud", "tienda", "a\u00f1o", "ni\u00f1o"),
             dir = c("Norte", "Sur", "Centro", "Este", "Oeste"))))
+
+# Minimal .xlsx reader (first sheet, values only) so reusable categories load without
+# readxl, which locked-down machines often cannot install. readxl is used when present.
+read_xlsx_min <- function(f) {
+  d <- tempfile("xlsx"); on.exit(unlink(d, recursive = TRUE))
+  zip::unzip(f, exdir = d)
+  rd <- function(p) if (file.exists(p)) gsub("<(/?)[A-Za-z]+:", "<\\1", read_text_utf8(p)) else ""   # drop x: prefixes (HQ writes them)
+  unesc <- function(x) {
+    k <- which(grepl("&#", x, fixed = TRUE))
+    if (length(k)) {
+      y <- x[k]; m <- gregexpr("&#x?[0-9A-Fa-f]+;", y, perl = TRUE)
+      regmatches(y, m) <- lapply(regmatches(y, m), function(e) vapply(e, function(s)
+        intToUtf8(strtoi(sub("^&#x?([0-9A-Fa-f]+);$", "\\1", s), if (grepl("^&#x", s)) 16L else 10L)), ""))
+      x[k] <- y
+    }
+    for (p in list(c("&lt;", "<"), c("&gt;", ">"), c("&quot;", "\""), c("&apos;", "'"), c("&amp;", "&")))
+      x <- gsub(p[1], p[2], x, fixed = TRUE)
+    x
+  }
+  tx <- function(x) {                                   # text of <si>/<is>: one <t>, or rich-text runs
+    one <- "^<(si|is)><t(\\s[^>]*)?>([^<]*)</t></(si|is)>$"
+    out <- ifelse(grepl("^<si/>$", x), "", sub(one, "\\3", x, perl = TRUE))
+    k <- which(!grepl(one, x, perl = TRUE) & x != "<si/>")
+    out[k] <- vapply(x[k], function(s) paste(sub("^<t[^>]*>", "", sub("</t>$", "",
+      regmatches(s, gregexpr("<t(\\s[^>]*)?>[^<]*</t>", s, perl = TRUE))[[1]])), collapse = ""), "")
+    out
+  }
+  ss <- rd(file.path(d, "xl", "sharedStrings.xml"))
+  # useBytes: character offsets in a long UTF-8 string are quadratic in R
+  u8 <- function(x) { Encoding(x) <- "UTF-8"; x }
+  strs <- unesc(tx(u8(regmatches(ss, gregexpr("(?s)<si>.*?</si>|<si/>", ss, perl = TRUE, useBytes = TRUE))[[1]])))
+  sh <- list.files(file.path(d, "xl", "worksheets"), "^sheet\\d+\\.xml$", full.names = TRUE)
+  if (!length(sh)) stop("No worksheet in ", basename(f), call. = FALSE)
+  xml <- rd(sh[order(as.integer(gsub("\\D", "", basename(sh))))][1])
+  cells <- u8(regmatches(xml, gregexpr("(?s)<c\\s[^>]*?(/>|>.*?</c>)", xml, perl = TRUE, useBytes = TRUE))[[1]])
+  if (!length(cells)) return(data.frame())
+  tag <- sub("(?s)>.*", ">", cells, perl = TRUE)
+  ref <- sub('.*\\sr="([A-Z]+)(\\d+)".*', "\\1 \\2", tag)
+  col <- vapply(strsplit(sub(" .*", "", ref), ""), function(l) sum((match(l, LETTERS)) * 26^(rev(seq_along(l)) - 1)), 0)
+  row <- as.integer(sub(".* ", "", ref))
+  typ <- ifelse(grepl('\\st="[^"]+"', tag), sub('.*\\st="([^"]+)".*', "\\1", tag), "n")
+  hv <- grepl("<v>", cells, fixed = TRUE)
+  v <- rep(NA_character_, length(cells)); v[hv] <- sub("(?s).*<v>([^<]*)</v>.*", "\\1", cells[hv], perl = TRUE)
+  val <- v
+  k <- typ == "s"; val[k] <- strs[suppressWarnings(as.integer(v[k])) + 1L]
+  k <- typ == "inlineStr"; val[k] <- unesc(tx(sub("(?s).*(<is>.*</is>).*", "\\1", cells[k], perl = TRUE)))
+  k <- !typ %in% c("s", "inlineStr") & hv; val[k] <- unesc(v[k])
+  val[val %in% ""] <- NA                                # as readxl
+  m <- matrix(NA_character_, max(row), max(col))
+  m[cbind(row, col)] <- val
+  hdr <- m[1, ]; hdr[is.na(hdr)] <- paste0("X", which(is.na(hdr)))
+  out <- as.data.frame(m[-1, , drop = FALSE], stringsAsFactors = FALSE)
+  names(out) <- hdr
+  out[] <- lapply(out, utils::type.convert, as.is = TRUE)
+  out
+}

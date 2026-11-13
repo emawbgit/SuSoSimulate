@@ -1,3 +1,24 @@
+# SuSoSimulate 0.7.0
+
+Ideas ported from IPA's [Synthetic-Data-Generator](https://github.com/PovertyAction/Synthetic-Data-Generator), adapted to questionnaire-driven generation; installation hardened for locked-down machines.
+
+## Generation
+* `suso_mock_config(numeric_dist =)`: normal, uniform, exponential or lognormal answers per numeric question, truncated to its validation range by inverse CDF; missing parameters derived from the range. Branch steering applies to these questions only during coverage repair.
+* `suso_mock_config(correlations =)`: target correlations between numeric questions of the same roster (Gaussian copula per roster row; inconsistent sets made positive definite). Unknown, non-numeric or cross-roster variables are dropped with a warning.
+* Text questions about addresses get fake postal addresses (EN/FR/ES).
+
+## Output
+* `suso_summary()`: one row per exported variable with disabled / unanswered / answered counts, distinct values, mean, sd, min, max. Shown in the app's new *Variables* tab.
+
+## App
+* Settings tab: a text box for distributions and correlations (`income lognormal meanlog=9 sdlog=1`, `income ~ spend 0.7`), saved and reloaded with the settings JSON and written into `reproduce_mock.R`.
+
+## Installation and portability
+* `install_SuSoSimulate.R` (repository root): base R only; personal library when the system library is read-only; binary packages only on Windows/macOS; retries downloads with the Windows internet settings; keeps an internal repository set in `options(repos)`; optional packages installed one by one; installs from GitHub with `GITHUB_PAT` (the repository is private, which is what gives `remotes::install_github()` its 404) or from a downloaded ZIP / tarball / folder.
+* `launch/SuSoSimulate_app.bat` (Windows) and `launch/SuSoSimulate_app.command` (macOS): double-click launchers that find per-user R installs, install what is missing and open the app.
+* `readxl` is no longer needed: a built-in reader loads the `.xlsx` reusable categories (checked identical to readxl on 33 category files; handles HQ's namespaced XML).
+* GitHub Actions: R CMD check on Windows, macOS and Linux, and the installer on Windows and macOS.
+
 # SuSoSimulate 0.6.0
 
 Learned from a real HQ 26.07 export with lookup tables (614 questions, 14 roster levels).

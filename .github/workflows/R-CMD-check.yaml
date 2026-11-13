@@ -1,0 +1,61 @@
+# R CMD check on Windows, macOS and Linux, plus the base-R installer on Windows and macOS
+name: R-CMD-check
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      _R_CHECK_FORCE_SUGGESTS_: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::rcmdcheck
+          needs: check
+      - uses: r-lib/actions/check-r-package@v2
+        with:
+          args: 'c("--no-manual")'
+          error-on: '"warning"'
+
+  installer:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+      - name: Install with install_SuSoSimulate.R (base R only, personal library)
+        shell: Rscript {0}
+        run: |
+          lib <- file.path(Sys.getenv("RUNNER_TEMP"), "userlib")
+          dir.create(lib)
+          source("install_SuSoSimulate.R")
+          install_susosimulate(".", optional = "readxl", lib = lib)
+      - name: Generate a mock export into an accented folder
+        shell: Rscript {0}
+        run: |
+          .libPaths(c(file.path(Sys.getenv("RUNNER_TEMP"), "userlib"), .libPaths()))
+          library(SuSoSimulate)
+          out <- file.path(Sys.getenv("RUNNER_TEMP"), "enquête mock")
+          r <- suso_mock(system.file("extdata", "demo_household.json", package = "SuSoSimulate"),
+                         design = suso_design(n_psu = 2, ssu_per_psu = 3), out_dir = out, seed = 1,
+                         format = "tabular",
+                         config = suso_mock_config(numeric_dist = list(age = "normal"),
+                                                   correlations = list(c("crop_area", "harvest_kg", 0.7))))
+          stopifnot(all(suso_validate_mock(r)$ok), file.exists(file.path(r$export_dir, "demo_hh_1_Tabular_All.zip")))
+          print(head(suso_summary(r)))

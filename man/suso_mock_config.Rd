@@ -35,7 +35,9 @@ suso_mock_config(
   rejection_rate = 0.2,
   pause_rate = 0.3,
   correction_rate = 0.04,
-  comment_rate = 0.004
+  comment_rate = 0.004,
+  numeric_dist = list(),
+  correlations = NULL
 )
 }
 \arguments{
@@ -109,6 +111,18 @@ settings: `"geometry_string"` (`lon,lat;lon,lat;...`), `"wkt"` (HQ's default) or
 (`RejectedBySupervisor > ReceivedByInterviewer > ... > Completed`).}
 
 \item{pause_rate, correction_rate, comment_rate}{Paradata realism knobs.}
+
+\item{numeric_dist}{Named list: numeric question -> distribution of its answers,
+`"normal"`, `"uniform"`, `"exponential"`, `"lognormal"`, or a list with `dist` and
+parameters (`mean`, `sd`; `min`, `max`; `rate`; `meanlog`, `sdlog`), e.g.
+`list(income = list(dist = "lognormal", meanlog = 9, sdlog = 1), age = "normal")`.
+Draws are truncated to the question's validation range; missing parameters are
+derived from it.}
+
+\item{correlations}{Pairs of numeric questions in the same roster with a target
+correlation: `list(c("income", "spend", 0.7))` or a data frame `var1, var2, rho`.
+Implemented with a Gaussian copula per roster row; questions without
+`numeric_dist` get a normal (bounded) or lognormal marginal.}
 }
 \description{
 Mock-generation settings

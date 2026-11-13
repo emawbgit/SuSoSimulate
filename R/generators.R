@@ -26,6 +26,7 @@ gen_name <- function(lang = "en") { p <- pool(lang); x <- paste(sample(p$first, 
 .kw <- list(
   phone = "phone|\\btel\\b|telephone|telefone|telefono|mobile|celular|portable|movil",
   email = "e-?mail|courriel|correo",
+  address = "address|adresse|direccion|endereco|street|\\brue\\b|\\bcalle\\b|\\bavenue",
   barcode = "barcode|serial|\\bqr\\b|code.?barre|codigo de barras",
   code = "code|codigo|\\bid\\b|_id\\b|number|numero|\\bno\\b|\\bnum\\b|identifiant|matricule",
   place = paste0("village|parish|ward|town|locality|community|region|district|county|province|state|\\bea\\b|^ea_|site|station|place|",
@@ -40,6 +41,12 @@ gen_text <- function(node, lang = "en") {
   p <- pool(lang)
   if (grepl(.kw$phone, nm)) return(paste0("07", paste(sample(0:9, 8, TRUE), collapse = "")))
   if (grepl(.kw$email, nm)) return(paste0(fold(sample(p$first, 1)), sample(10:99, 1), "@example.org"))
+  if (grepl(.kw$address, nm)) {                                       # fake postal address, as IPA's generator
+    x <- switch(lang, fr = sprintf("%d rue %s", sample(1:200, 1), sample(p$last, 1)),
+                es = sprintf("Calle %s %d", sample(p$last, 1), sample(1:200, 1)),
+                sprintf("PLOT %d, %s ROAD", sample(1:200, 1), sample(p$last, 1)))
+    return(if (p$up) toupper(x) else x)
+  }
   if (grepl(.kw$barcode, nm)) return(paste(sample(c(LETTERS, 0:9), 10, TRUE), collapse = ""))
   if (grepl(.kw$code, nm)) return(sprintf("%04d", sample(1:9999, 1)))
   if (grepl(.kw$place, nm)) { x <- paste(sample(p$last, 1), sample(p$dir, 1)); return(if (p$up) toupper(x) else x) }
@@ -133,13 +140,18 @@ gen_numeric <- function(G, node, rv) {
   if (length(node$domain)) return(finish_num(pick(node$domain), node))   # see finalize_questionnaire
   # numeric special values (e.g. -98 "Don't know")
   if (nrow(node$options) && stats::runif(1) < G$cfg$special_value_rate) return(finish_num(pick(node$options$code), node))
+  ds <- G$cfg$numeric_dist[[node$varname]]
+  u <- cor_u(G, node$varname, rv)
+  if (!is.null(u) && is.null(ds)) ds <- list(dist = if (is.finite(lo) && is.finite(hi)) "normal" else "lognormal")
   tg <- node$targets
-  if (length(tg) && stats::runif(1) < G$tune$target_prob) {
+  # a user distribution is kept as given; only the coverage repair steers it to branch constants
+  if (length(tg) && (is.null(ds) || length(G$tune$focus)) && stats::runif(1) < G$tune$target_prob) {
     cand <- unique(c(tg - 1, tg, tg + 1))
     if (!int) cand <- unique(c(cand, tg - 0.5, tg + 0.5))
     cand <- cand[(is.na(lo) | cand >= lo) & (is.na(hi) | cand <= hi)]
     if (length(cand)) return(finish_num(pick(cand), node))
   }
+  if (!is.null(ds)) return(finish_num(dist_draw(norm_dist(ds, node$varname), lo, hi, u %||% stats::runif(1)), node))
   nm <- node$fold %||% fold(node$varname)
   x <- if (!is.na(lo) && !is.na(hi)) {
     if (int && (hi - lo) < 1e6) lo + sample.int(floor(hi - lo) + 1, 1) - 1

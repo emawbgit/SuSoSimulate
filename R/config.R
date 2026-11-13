@@ -13,6 +13,16 @@
 #' @param max_roster_default Cap for roster sizes when no validation bound exists.
 #' @param roster_sizes Named list: trigger variable -> `c(min, max)`, a fixed size, or function().
 #' @param generators Named list: variable -> `function(rv, unit)` returning a value.
+#' @param numeric_dist Named list: numeric question -> distribution of its answers,
+#'   `"normal"`, `"uniform"`, `"exponential"`, `"lognormal"`, or a list with `dist` and
+#'   parameters (`mean`, `sd`; `min`, `max`; `rate`; `meanlog`, `sdlog`), e.g.
+#'   `list(income = list(dist = "lognormal", meanlog = 9, sdlog = 1), age = "normal")`.
+#'   Draws are truncated to the question's validation range; missing parameters are
+#'   derived from it.
+#' @param correlations Pairs of numeric questions in the same roster with a target
+#'   correlation: `list(c("income", "spend", 0.7))` or a data frame `var1, var2, rho`.
+#'   Implemented with a Gaussian copula per roster row; questions without
+#'   `numeric_dist` get a normal (bounded) or lognormal marginal.
 #' @param numeric_roster_base First row code of numeric-triggered rosters (SuSo: 1).
 #' @param answer_hidden Fill hidden-scope questions (usually preloaded in SuSo).
 #' @param supervisor_answer_rate Share of supervisor/HQ-scope questions answered.
@@ -57,8 +67,13 @@ suso_mock_config <- function(item_nonresponse = 0, error_rate = 0, target_prob =
                              max_tries = 25, max_roster_rows = 200,
                              na_numeric = haven::tagged_na("a"), na_string = "##N/A##",
                              null_share = 0.25, special_value_rate = 0.03, cover_first = TRUE, geo_format = c("geometry_string", "wkt", "geojson"), restart_rate = 0.15, rejection_rate = 0.2,
-                             pause_rate = 0.3, correction_rate = 0.04, comment_rate = 0.004) {
+                             pause_rate = 0.3, correction_rate = 0.04, comment_rate = 0.004,
+                             numeric_dist = list(), correlations = NULL) {
   geo_format <- match.arg(geo_format)
+  if (!is.list(numeric_dist) || (length(numeric_dist) && is.null(names(numeric_dist))))
+    stop("`numeric_dist` must be a named list, e.g. list(income = \"lognormal\").", call. = FALSE)
+  numeric_dist <- Map(norm_dist, numeric_dist, names(numeric_dist))
+  correlations <- norm_cor(correlations)
   cfg <- structure(as.list(environment()), class = "suso_mock_config")
   validate_config(cfg)
   cfg

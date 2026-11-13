@@ -4,3 +4,6 @@
 ^README\.md$
 ^man/figures/logo\.svg$
 ^LICENSE\.md$
+^launch$
+^install_SuSoSimulate\.R$
+^\.gitattributes$

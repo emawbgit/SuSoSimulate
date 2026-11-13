@@ -27,7 +27,8 @@ suso_app <- function(launch.browser = TRUE, port = getOption("shiny.port"), ...)
   miss <- .app_pkgs[!vapply(.app_pkgs, requireNamespace, logical(1), quietly = TRUE)]
   if (length(miss))
     stop("The app needs: ", paste(miss, collapse = ", "), ". Install with install.packages(c(",
-         paste0('"', miss, '"', collapse = ", "), "))", call. = FALSE)
+         paste0('"', miss, '"', collapse = ", "), ")), or run install_SuSoSimulate.R from the repository ",
+         "(handles personal libraries and proxies). Without them, suso_mock_interactive() does the same in the console.", call. = FALSE)
   shiny::runApp(suso_app_object(), launch.browser = launch.browser, port = port, ...)
 }
 
@@ -173,7 +174,12 @@ app_ui <- function() {
             num("st100", "Completed", 0.2, 0, 1, 0.05), num("st120", "Approved (sup.)", 0.3, 0, 1, 0.05),
             num("st130", "Approved (HQ)", 0.5, 0, 1, 0.05), num("st65", "Rejected (sup.)", 0, 0, 1, 0.05),
             num("st125", "Rejected (HQ)", 0, 0, 1, 0.05)),
-          num("seed", "Random seed", 12345, 1)))),
+          num("seed", "Random seed", 12345, 1)),
+        bslib::card(bslib::card_header("Answer distributions & correlations (optional)"),
+          ui_hint("One line per numeric question: name, distribution (normal, uniform, exponential, lognormal), optional parameters. Answers stay within the question's validation range. 'a ~ b 0.7' sets a target correlation between two numeric questions of the same roster."),
+          shiny::textAreaInput("dist_spec", NULL, rows = 4, width = "100%",
+            placeholder = "income lognormal meanlog=9 sdlog=1\nage normal mean=35 sd=12\nincome ~ spend 0.7"),
+          shiny::uiOutput("dist_vars")))),
 
     # 4 ---------------------------------------------------------------------
     bslib::nav_panel("4. Generate & review", value = "g",
@@ -191,6 +197,9 @@ app_ui <- function() {
           ui_hint("Each enabling condition: interviews where it was TRUE / FALSE. 'unreachable' notes mean the questionnaire's own validations rule the outcome out."),
           DT::DTOutput("tbl_cov")),
         bslib::nav_panel("Option coverage", DT::DTOutput("tbl_opt")),
+        bslib::nav_panel("Variables",
+          ui_hint("Every exported variable: rows disabled by routing, enabled but unanswered, answered, and the distribution of numeric answers."),
+          DT::DTOutput("tbl_vars")),
         bslib::nav_panel("Data browser",
           shiny::selectInput("data_file", "File", choices = NULL), DT::DTOutput("tbl_data")),
         bslib::nav_panel("Paradata", DT::DTOutput("tbl_para")),
@@ -404,7 +413,8 @@ app_server <- function(input, output, session) {
                     special_value_rate = input$special_value_rate, target_prob = input$target_prob,
                     roster_mean = input$roster_mean, roster_sizes = rs, status_mix = sm, tz_offset = input$tz_offset,
                     coverage_repair = isTRUE(input$coverage_repair), repair_budget = input$repair_budget, repair_time = input$repair_time %||% 120,
-                    allow_augment = isTRUE(input$allow_augment), cover_first = !isFALSE(input$cover_first)),
+                    allow_augment = isTRUE(input$allow_augment), cover_first = !isFALSE(input$cover_first),
+                    numeric_dist = dspec()$numeric_dist %||% list(), correlations = dspec()$correlations),
       seed = input$seed, version = input$version, format = input$format %||% "stata")
   })
 
@@ -420,6 +430,7 @@ app_server <- function(input, output, session) {
     if (is.null(rv$qn)) { shiny::showNotification("Load a questionnaire first (tab 1).", type = "warning"); return() }
     s <- settings()
     args <- tryCatch(build_args(s), error = function(e) e)
+    if (!is.null(dspec()$error)) args <- simpleError(paste("Distributions:", dspec()$error))
     if (inherits(args, "error")) { shiny::showNotification(conditionMessage(args), type = "error", duration = 10); return() }
     warns <- character()
     res <- shiny::withProgress(message = "Generating", value = 0, {
@@ -469,6 +480,19 @@ app_server <- function(input, output, session) {
                                                            c("#1b7f3b", "#b26b00", "#b26b00", "#a61b1b")), fontWeight = "bold")
   })
   output$tbl_opt <- DT::renderDT({ shiny::req(rv$res); dt(rv$res$coverage$options) })
+  output$tbl_vars <- DT::renderDT({
+    shiny::req(rv$res); v <- suso_summary(rv$res)
+    v[c("mean", "sd", "min", "max")] <- lapply(v[c("mean", "sd", "min", "max")], signif, 4)
+    dt(v)
+  })
+  dspec <- shiny::reactive(tryCatch(parse_dist_spec(input$dist_spec), error = function(e) list(error = conditionMessage(e))))
+  output$dist_vars <- shiny::renderUI({
+    e <- dspec()$error
+    if (!is.null(e)) return(shiny::div(class = "text-danger small", e))
+    shiny::req(rv$qn)
+    nm <- vapply(Filter(function(n) identical(n$qtype, "numeric") && !isTRUE(n$is_trigger), lapply(rv$qn$order, function(i) rv$qn$nodes[[i]])), `[[`, "", "varname")
+    shiny::div(class = "text-muted small", "Numeric questions: ", paste(utils::head(nm, 60), collapse = ", "), if (length(nm) > 60) ", ...")
+  })
   output$tbl_data <- DT::renderDT({
     shiny::req(rv$res, input$data_file)
     d <- rv$res$data[[input$data_file]]; shiny::req(d)
@@ -533,6 +557,8 @@ app_server <- function(input, output, session) {
     stm <- unlist(cf$status_mix)
     for (k in c("100", "120", "130", "65", "125")) upd_num(paste0("st", k), if (k %in% names(stm)) stm[[k]] else 0)
     for (v in names(cf$roster_sizes)) shiny::updateSliderInput(session, paste0("rs_", v), value = unlist(cf$roster_sizes[[v]]))
+    if (length(cf$numeric_dist) || length(cf$correlations))
+      shiny::updateTextAreaInput(session, "dist_spec", value = paste(spec_text(cf$numeric_dist, cf$correlations), collapse = "\n"))
     shiny::showNotification("Settings loaded.", type = "message")
   })
   output$dl_r <- shiny::downloadHandler(filename = function() "reproduce_mock.R",
@@ -562,7 +588,7 @@ app_r_code <- function(s, qname = NULL, has_frame = FALSE) {
   dd$start_date <- NULL
   arg <- function(l) paste0("    ", names(l), " = ", vapply(l, function(v) if (is.name(v)) as.character(v) else r_lit(v), ""), collapse = ",\n")
   c("# Reproduce this SuSoSimulate run",
-    "# install.packages(\"remotes\"); remotes::install_github(\"emawbgit/SuSoSimulate\")",
+    "# Not installed? source(\"install_SuSoSimulate.R\"); install_susosimulate()   (from the repository; base R only)",
     "library(SuSoSimulate)", "",
     sprintf('questionnaire <- "%s"   # path to document.json / HQ export .zip', qname %||% "document.json"),
     if (has_frame) 'frame <- read.csv("frame.csv", stringsAsFactors = FALSE, check.names = FALSE)',

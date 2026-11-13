@@ -39,6 +39,7 @@ suso_mock <- function(questionnaire, design = suso_design(), config = suso_mock_
   if (!is.null(out_dir)) out_dir <- check_out_dir(out_dir)      # fail before generating, not after
   qn <- if (inherits(questionnaire, "suso_questionnaire")) questionnaire else suso_read_questionnaire(questionnaire, verbose = verbose)
   version <- resolve_version(version, qn)
+  config <- check_dist_vars(qn, config)
   frame <- build_frame(design, qn)
   qn$interviewer_var <- frame$interviewer_var
   n <- nrow(frame$meta)

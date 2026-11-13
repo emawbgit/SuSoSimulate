@@ -20,6 +20,7 @@ new_state <- function(unit) {
   st$changed <- FALSE
   st$vv <- new.env(hash = TRUE)        # per-variable change counter ("__rows__" for roster rows); keys the memo
   st$memo <- new.env(hash = TRUE)      # "node|rv" -> c(signature, result)
+  st$latent <- new.env(hash = TRUE)    # copula draws for correlated numerics, per roster row
   st$off <- new.env(hash = TRUE)       # disabled groups / rows whose subtree is already cleared
   st
 }
@@ -283,6 +284,7 @@ generate_interview <- function(qn, cfg, unit, cov, tune = list()) {
   G <- new.env()
   G$qn <- qn; G$cfg <- cfg; G$cov <- cov; G$rec <- FALSE; G$wide <- FALSE
   G$tune <- utils::modifyList(list(target_prob = cfg$target_prob), tune)
+  G$cor <- cor_plan(cfg$correlations)
   G$st <- new_state(unit)
   for (p in seq_len(cfg$max_passes)) {
     G$st$changed <- FALSE
