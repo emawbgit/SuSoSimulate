@@ -117,7 +117,7 @@ check_out_dir <- function(out_dir) {
       sprintf(" The path has non-ASCII characters and this R session's locale (%s) cannot represent them: use an ASCII folder name, or start R in a UTF-8 locale.", Sys.getlocale("LC_CTYPE")) else ""
     stop(sprintf("Cannot write to the output folder '%s' (%s).%s", out_dir, why, hint), call. = FALSE)
   }
-  normalizePath(out_dir, mustWork = FALSE)
+  normalizePath(out_dir, winslash = "/", mustWork = FALSE)
 }
 
 # <Q>_<version>_SuSoMock_STATA | <Q>_<version>_SuSoMock_Tabular (the export format, as chosen)
@@ -356,7 +356,7 @@ write_paradata_tab <- function(p, path) {
 
 # Cross-platform zip (no external zip binary needed)
 zip_dir <- function(dir, zipfile) {
-  zipfile <- normalizePath(zipfile, mustWork = FALSE)
+  zipfile <- normalizePath(zipfile, winslash = "/", mustWork = FALSE)
   if (file.exists(zipfile)) file.remove(zipfile)
   zip::zipr(zipfile, list.files(dir, full.names = TRUE, all.files = FALSE, no.. = TRUE))
   invisible(zipfile)

@@ -21,7 +21,7 @@ test_that("demo questionnaire: structure, routing and full coverage", {
   expect_equal(unname(r$coverage$summary[["branch_coverage"]]), 1)
   # files on disk
   expect_match(basename(r$export_dir), "^demo_hh_1_SuSoMock_STATA$")
-  expect_equal(dirname(r$export_dir), normalizePath(out))
+  expect_equal(dirname(r$export_dir), normalizePath(out, winslash = "/"))
   dd <- file.path(r$export_dir, "demo_hh_1_STATA_All")
   expect_true(all(file.exists(file.path(dd, c("demo_hh.dta", "members.dta", "interview__actions.dta",
                                               "interview__diagnostics.dta", "interview__errors.dta")))))
