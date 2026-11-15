@@ -55,7 +55,7 @@ With it you can:
 | **Consistency** | `suso_validate_mock()` cross-checks ids, statuses, error and comment counts, assignments, interviewers and paradata across all files |
 | **Languages** | French, Spanish and other localised questionnaires: accents, cedillas, `¿ ¡`, curly quotes and non-Latin scripts pass through unchanged; Latin-1 / Windows-1252 inputs are converted; text answers follow the questionnaire's language; works in UTF-8 and C locales |
 | **Interfaces** | Shiny app (point-and-click, iehfc-style workflow), double-click launchers for Windows and macOS, interactive console wizard, and a scriptable API; progress with estimated time remaining |
-| **Installation** | `install_SuSoSimulate.R`: base R only, personal library, binary packages, proxy fallback, private-repository aware; built for locked-down (e.g. World Bank) machines |
+| **Installation** | `remotes::install_github()`, or `install_SuSoSimulate.R` for locked-down (e.g. World Bank) machines: base R only, personal library, binary packages, proxy fallback, offline ZIP |
 
 ---
 
@@ -71,14 +71,30 @@ With it you can:
   - `pdftools` — PDF input (experimental).
   - `testthat` — running the test suite.
 
-### Option A — the installer (recommended, also on locked-down machines)
+### Option A — `remotes::install_github()` (recommended)
 
-`install_SuSoSimulate.R`, at the root of the repository, needs base R only (no `remotes`, no Rtools, no admin rights). It is written for restrictive IT setups such as World Bank laptops:
+```r
+install.packages(c("remotes", "readxl", "shiny", "bslib", "DT"))   # readxl and the app packages are optional
+remotes::install_github("emawbgit/SuSoSimulate")
+```
+
+Without `remotes`, base R installs the same thing from the GitHub archive:
+
+```r
+install.packages(c("jsonlite", "haven", "zip"))
+install.packages("https://github.com/emawbgit/SuSoSimulate/archive/refs/heads/main.tar.gz",
+                 repos = NULL, type = "source")
+```
+
+### Option B — the installer, for locked-down machines
+
+If Option A fails (e.g. on World Bank laptops), use `install_SuSoSimulate.R` from the repository root. It needs base R only (no `remotes`, no Rtools, no admin rights):
 
 | Hurdle | What the installer does |
 |---|---|
-| `404` from `remotes::install_github()` | The repository is **private**: GitHub answers 404 to anyone not signed in, and `remotes` cannot sign in for you. The installer uses your `GITHUB_PAT` when set, or installs from the ZIP you download in the browser (where you are signed in). Once the repository is public, no token is needed |
-| `remotes` itself blocked | Not used |
+| `remotes` blocked or not installable | Not used |
+| `HTTP error 401 Bad credentials` / `404` from `remotes` | Usually a stale `GITHUB_PAT` set on the machine. Downloads the public archive without a token (or fix it with `Sys.unsetenv("GITHUB_PAT")` before Option A) |
+| `api.github.com` blocked by the proxy | Downloads from `github.com/.../archive`, or installs from a ZIP downloaded in the browser |
 | System library not writable (`'lib' is not writable`) | Installs into your personal library (`R_LIBS_USER`), creating it if needed |
 | No Rtools / compilers | Binary packages only on Windows and macOS (`install.packages.compile.from.source = "never"`) |
 | Proxy or SSL inspection breaks downloads (`cannot open URL`) | Retries with the Windows internet settings (`download.file.method = "wininet"`) |
@@ -86,26 +102,19 @@ With it you can:
 | One optional package blocked (e.g. `pdftools`) | Installed one by one; a failure is reported and skipped |
 
 ```r
-# 1. In the browser (signed in to GitHub): https://github.com/emawbgit/SuSoSimulate > Code > Download ZIP
-# 2. Unzip it, open R/RStudio in the unzipped folder, then:
+# From GitHub:
+source("https://raw.githubusercontent.com/emawbgit/SuSoSimulate/main/install_SuSoSimulate.R")
+install_susosimulate()
+
+# Offline / GitHub blocked: download https://github.com/emawbgit/SuSoSimulate > Code > Download ZIP,
+# unzip it, open R in the unzipped folder, then:
 source("install_SuSoSimulate.R")
 install_susosimulate(".")                      # or the path to the .zip / a .tar.gz
-
-# Or straight from GitHub, with a personal access token while the repository is private:
-Sys.setenv(GITHUB_PAT = "ghp_...")             # GitHub > Settings > Developer settings > Tokens (scope: repo)
-source("install_SuSoSimulate.R"); install_susosimulate()
 ```
 
 From a terminal: `Rscript install_SuSoSimulate.R SuSoSimulate-main.zip`.
 
 **No R console needed:** double-click `launch/SuSoSimulate_app.bat` (Windows) or `launch/SuSoSimulate_app.command` (macOS) in the unzipped folder. It finds R (also per-user installs from Software Center, which are not on the PATH), installs what is missing and opens the app in the browser.
-
-### Option B — `remotes::install_github()`
-
-```r
-install.packages(c("remotes", "readxl", "shiny", "bslib", "DT"))
-remotes::install_github("emawbgit/SuSoSimulate")   # private repository: set GITHUB_PAT first
-```
 
 ### Option C — from a local clone
 
@@ -734,7 +743,8 @@ Three patterns of that questionnaire shape the generator:
 
 | Symptom | Fix |
 |---|---|
-| `HTTP error 404` from `remotes::install_github()` | The repository is private. Use the installer with a downloaded ZIP or a `GITHUB_PAT` (see Installation), or make the repository public |
+| `HTTP error 401 Bad credentials` or `404` from `remotes::install_github()` | A stale or wrong `GITHUB_PAT` on the machine: `Sys.unsetenv("GITHUB_PAT")` and retry, or use `install_SuSoSimulate.R` (see Installation) |
+| `remotes` / `api.github.com` blocked | Base-R one-liner from the archive (Option A), or the installer with a ZIP downloaded in the browser (Option B) |
 | `'lib = ...' is not writable`, `cannot open URL`, `installation of package had non-zero exit status`, Rtools requested | Use `install_SuSoSimulate.R`: personal library, binaries only, Windows proxy fallback. If CRAN itself is blocked, ask IT for the internal mirror URL and set `options(repos = c(CRAN = "<url>"))` before running it |
 | `Missing packages: jsonlite, haven` | `install.packages(c("jsonlite", "haven"))`, or run `install_SuSoSimulate.R` |
 | `Reusable categories … not found: using placeholder codes 1-5` | Use the full Designer or HQ zip, which contains `Categories/*.xlsx` (read with or without `readxl`) |

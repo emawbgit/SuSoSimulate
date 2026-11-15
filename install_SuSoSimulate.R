@@ -5,12 +5,12 @@
 #   * retries downloads with the Windows internet settings (proxy) if the default fails;
 #   * installs the optional packages (readxl, shiny, bslib, DT, pdftools, testthat) one by
 #     one and keeps going if one is blocked;
-#   * installs SuSoSimulate itself from GitHub (token-aware, so it works while the repository
-#     is private), or from a file you downloaded: a .tar.gz, the GitHub "Download ZIP", or
-#     an unpacked folder.
+#   * installs SuSoSimulate itself from the public GitHub archive (no API, no token), or from
+#     a file you downloaded: a .tar.gz, the GitHub "Download ZIP", or an unpacked folder.
 #
 # Usage, in R or RStudio:
-#   source("install_SuSoSimulate.R")                         # from GitHub
+#   source("https://raw.githubusercontent.com/emawbgit/SuSoSimulate/main/install_SuSoSimulate.R")
+#   install_susosimulate()                                   # from GitHub
 #   source("install_SuSoSimulate.R"); install_susosimulate("C:/Users/me/Downloads/SuSoSimulate-main.zip")
 # From a terminal:
 #   Rscript install_SuSoSimulate.R [path-to-zip-or-tar.gz-or-folder]
@@ -74,20 +74,17 @@ install_susosimulate <- function(source = NULL, optional = c("readxl", "shiny", 
   # 4. the package
   src <- source
   if (is.null(src)) {
-    tok <- Sys.getenv("GITHUB_PAT", Sys.getenv("GITHUB_TOKEN"))
-    url <- sprintf("https://api.github.com/repos/emawbgit/SuSoSimulate/tarball/%s", ref)
+    # public archive on github.com: no API call, no token (a stale GITHUB_PAT breaks remotes)
+    url <- sprintf("https://github.com/emawbgit/SuSoSimulate/archive/%s.tar.gz", ref)
     src <- tempfile(fileext = ".tar.gz")
-    say("Downloading SuSoSimulate (%s) from GitHub%s ...", ref, if (nzchar(tok)) " with your GITHUB_PAT" else "")
-    hd <- if (nzchar(tok)) c(Authorization = paste("token", tok)) else NULL
-    got <- tryCatch({ retry(function() utils::download.file(url, src, mode = "wb", quiet = TRUE, headers = hd)); TRUE },
+    say("Downloading SuSoSimulate (%s) from GitHub ...", ref)
+    got <- tryCatch({ retry(function() utils::download.file(url, src, mode = "wb", quiet = TRUE)); TRUE },
                     error = function(e) { say("  %s", conditionMessage(e)); FALSE },
                     warning = function(w) { say("  %s", conditionMessage(w)); FALSE })
-    if (!got || !file.exists(src) || file.size(src) < 1000) stop("Could not download SuSoSimulate from GitHub (404 = private repository or no access; ",
-                   "otherwise the network blocks api.github.com).\n",
-                   "  Fix 1: create a GitHub token (Settings > Developer settings > Personal access tokens, scope 'repo'), ",
-                   "then Sys.setenv(GITHUB_PAT = \"<token>\") and rerun.\n",
-                   "  Fix 2: in the browser open https://github.com/emawbgit/SuSoSimulate > Code > Download ZIP, then ",
-                   "install_susosimulate(\"<path to SuSoSimulate-main.zip>\").", call. = FALSE)
+    if (!got || !file.exists(src) || file.size(src) < 1000)
+      stop("Could not download SuSoSimulate from GitHub (blocked by the network, or no branch/tag '", ref, "').\n",
+           "  Download https://github.com/emawbgit/SuSoSimulate > Code > Download ZIP in the browser, then ",
+           "install_susosimulate(\"<path to SuSoSimulate-main.zip>\").", call. = FALSE)
   }
   src <- normalizePath(src, mustWork = TRUE)
   if (grepl("\\.(zip|tar\\.gz|tgz)$", src, ignore.case = TRUE)) {

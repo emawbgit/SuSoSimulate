@@ -1,5 +1,7 @@
 # SuSoSimulate 0.7.0
 
+* The repository is public: `remotes::install_github("emawbgit/SuSoSimulate")` is the first install option again.
+
 Ideas ported from IPA's [Synthetic-Data-Generator](https://github.com/PovertyAction/Synthetic-Data-Generator), adapted to questionnaire-driven generation; installation hardened for locked-down machines.
 
 ## Generation
@@ -14,7 +16,7 @@ Ideas ported from IPA's [Synthetic-Data-Generator](https://github.com/PovertyAct
 * Settings tab: a text box for distributions and correlations (`income lognormal meanlog=9 sdlog=1`, `income ~ spend 0.7`), saved and reloaded with the settings JSON and written into `reproduce_mock.R`.
 
 ## Installation and portability
-* `install_SuSoSimulate.R` (repository root): base R only; personal library when the system library is read-only; binary packages only on Windows/macOS; retries downloads with the Windows internet settings; keeps an internal repository set in `options(repos)`; optional packages installed one by one; installs from GitHub with `GITHUB_PAT` (the repository is private, which is what gives `remotes::install_github()` its 404) or from a downloaded ZIP / tarball / folder.
+* `install_SuSoSimulate.R` (repository root): base R only; personal library when the system library is read-only; binary packages only on Windows/macOS; retries downloads with the Windows internet settings; keeps an internal repository set in `options(repos)`; optional packages installed one by one; installs from the public GitHub archive (no API, no token) or from a downloaded ZIP / tarball / folder.
 * `launch/SuSoSimulate_app.bat` (Windows) and `launch/SuSoSimulate_app.command` (macOS): double-click launchers that find per-user R installs, install what is missing and open the app.
 * `readxl` is no longer needed: a built-in reader loads the `.xlsx` reusable categories (checked identical to readxl on 33 category files; handles HQ's namespaced XML).
 * GitHub Actions: R CMD check on Windows, macOS and Linux, and the installer on Windows and macOS.

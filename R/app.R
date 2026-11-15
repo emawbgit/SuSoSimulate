@@ -588,7 +588,7 @@ app_r_code <- function(s, qname = NULL, has_frame = FALSE) {
   dd$start_date <- NULL
   arg <- function(l) paste0("    ", names(l), " = ", vapply(l, function(v) if (is.name(v)) as.character(v) else r_lit(v), ""), collapse = ",\n")
   c("# Reproduce this SuSoSimulate run",
-    "# Not installed? source(\"install_SuSoSimulate.R\"); install_susosimulate()   (from the repository; base R only)",
+    "# Not installed? remotes::install_github(\"emawbgit/SuSoSimulate\")",
     "library(SuSoSimulate)", "",
     sprintf('questionnaire <- "%s"   # path to document.json / HQ export .zip', qname %||% "document.json"),
     if (has_frame) 'frame <- read.csv("frame.csv", stringsAsFactors = FALSE, check.names = FALSE)',
